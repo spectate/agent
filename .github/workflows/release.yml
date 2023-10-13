@@ -1,0 +1,53 @@
+name: Create Release
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  vet-lint:
+    if: "!contains(github.event.head_commit.message, 'chore(release):')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: '1.21.x'
+
+      - name: Install dependencies
+        run: |
+          go version
+          go mod download
+
+      - name: Run vet
+        run: |
+          go vet ./...
+
+  semantic-release:
+    needs: vet-lint
+    runs-on: ubuntu-latest
+    outputs:
+      version_updated: ${{ steps.check_version.outputs.version_updated }}
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v2
+        with:
+          node-version: '20'
+
+      - name: NPM install
+        run: npm ci
+
+      - name: Run semantic-release
+        run: npx semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}

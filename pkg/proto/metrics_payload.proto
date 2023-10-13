@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package spectate.agent;
+
+option go_package = "pkg/proto/pb";
+
+import "google/protobuf/timestamp.proto";
+
+message MetricsPayload {
+
+  // The data type of a Metric value. Deferred from OpenMetrics types.
+  enum MetricType {
+    UNKNOWN = 0; // Default value. Should not be used.
+    GAUGE = 1;
+    INFO = 4;
+//    We currently don't support these types. Uncomment when we do.
+//    COUNTER = 2;
+//    STATE_SET = 3;
+//    HISTOGRAM = 5;
+//    GAUGE_HISTOGRAM = 6;
+//    SUMMARY = 7;
+  }
+
+  message Label {
+    string key = 1;
+    string value = 2;
+  }
+
+  message Metric {
+    string key = 1;
+    MetricType type = 2;
+    repeated Label labels = 3;
+
+    oneof value {
+      UnknownValue unknown_value = 4;
+      GaugeValue gauge_value = 5;
+      InfoValue info_value = 9;
+//      CounterValue counter_value = 6;
+//      HistogramValue histogram_value = 7;
+//      StateSetValue state_set_value = 8;
+//      SummaryValue summary_value = 10;
+    }
+
+    google.protobuf.Timestamp timestamp = 10;
+  }
+
+  // Value for UNKNOWN Metric.
+  message UnknownValue {
+    // Required.
+    double value = 1;
+  }
+
+  // Value for GAUGE Metric.
+  message GaugeValue {
+    // Required.
+    double value = 1;
+  }
+
+  // Value for INFO Metric.
+  message InfoValue {
+    // Optional.
+    repeated Label info = 1;
+  }
+
+  repeated Metric metrics = 1;
+}

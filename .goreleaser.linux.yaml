@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj
+project_name: spectated
+
+before:
+  hooks:
+    - go mod tidy
+
+release:
+  github:
+    owner: spectate
+    name: agent
+
+builds:
+  - id: "spectated"
+    main: "./main/main.go"
+    binary: "spectated"
+    env:
+      - CGO_ENABLED=0
+      - ENVIRONMENT=production
+      - API_BASE_URL=https://api.spectate.net/agent-api
+      - LOG_LEVEL=info
+      - SENTRY_DSN={{ .Env.SENTRY_DSN }}
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -X 'github.com/spectate/agent/internal/version.Version={{.Version}}'
+      - -X 'github.com/spectate/agent/internal/version.BuildDate={{.Date}}'
+      - -X 'github.com/spectate/agent/internal/version.Environment={{ .Env.ENVIRONMENT }}'
+      - -X 'github.com/spectate/agent/internal/logger.LogLevel={{ .Env.LOG_LEVEL }}'
+      - -X 'github.com/spectate/agent/internal/http.ApiBaseUrl={{ .Env.API_BASE_URL }}'
+      - -X 'github.com/spectate/agent/pkg/telemetry.SentryDsn={{ .Env.SENTRY_DSN }}'
+    overrides:
+      - goos: linux
+        goarch: arm64
+        env:
+          - CC=aarch64-linux-gnu-gcc
+      - goos: linux
+        goarch: amd64
+        env:
+          - CC=gcc
+
+archives:
+  - format: binary
+    name_template: '{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}'
+
+checksum:
+  name_template: '{{ .ProjectName }}_{{ .Version }}_linux_checksums.txt'
