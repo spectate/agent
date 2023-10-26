@@ -1,6 +1,6 @@
 name: Create Release
 concurrency:
-  group: ${{ github.workflow }}
+  group: main-release
   cancel-in-progress: true
 on:
   push:

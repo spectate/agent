@@ -1,0 +1,32 @@
+name: Run vet
+concurrency:
+  group: vet-lint
+  cancel-in-progress: true
+on:
+  push:
+    branches:
+      - *
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  vet-lint:
+    if: "!contains(github.event.head_commit.message, 'chore(release):')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: '1.21.x'
+
+      - name: Install dependencies
+        run: |
+          go version
+          go mod download
+
+      - name: Run vet
+        run: |
+          go vet ./...

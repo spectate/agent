@@ -1,6 +1,6 @@
 name: Build and attach to release
 concurrency:
-  group: ${{ github.workflow }}
+  group: main-build-release
   cancel-in-progress: true
 on:
   create:
