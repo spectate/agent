@@ -1,7 +1,4 @@
 name: Run vet
-concurrency:
-  group: vet-lint
-  cancel-in-progress: true
 on:
   push:
   pull_request:
