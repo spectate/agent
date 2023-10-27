@@ -210,7 +210,9 @@ func (app *App) bootstrapMonitoring(ctx context.Context) {
 	// For all registered strategies, log them
 	for period, strategySlice := range app.strategies {
 		for _, strategy := range strategySlice {
-			logger.Log.Info().Str("strategy", strategy.Options().Namespace+"."+strategy.Options().Id).Str("frequency", period.String()).Msg("Registered strategy")
+			logger.Log.Info().Str("strategy", strategy.Options().Namespace+"."+strategy.Options().Id).
+				Str("frequency", period.String()).
+				Msg("Registered strategy")
 		}
 	}
 

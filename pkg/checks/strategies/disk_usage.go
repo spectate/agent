@@ -4,13 +4,19 @@ import (
 	"context"
 	"github.com/shirou/gopsutil/v3/disk"
 	"github.com/spectate/agent/internal/logger"
+	"github.com/spectate/agent/internal/shared"
 	"github.com/spectate/agent/pkg/metrics"
 	"github.com/spectate/agent/pkg/proto/pb"
+	"github.com/spf13/viper"
+	"strings"
 	"time"
 )
 
 type DiskUsage struct {
-	opts Options
+	opts                Options
+	excludedDevices     []string
+	excludedFilesystems []string
+	excludedMountPoints []string
 }
 
 func init() {
@@ -40,7 +46,15 @@ func (s *DiskUsage) Run(ctx context.Context, dataCh chan<- []*pb.MetricsPayload_
 		return err
 	}
 
+	s.excludedFilesystems = viper.GetStringSlice("checks.disk_usage.exclude.filesystems")
+	s.excludedDevices = viper.GetStringSlice("checks.disk_usage.exclude.devices")
+	s.excludedMountPoints = viper.GetStringSlice("checks.disk_usage.exclude.mount_points")
+
 	for _, partition := range partitionInfo {
+		if s.isExcluded(partition) {
+			continue
+		}
+
 		usage, err := disk.Usage(partition.Mountpoint)
 		if err != nil {
 			logger.Log.Error().Err(err).Msgf("Failed to get disk usage for %s", partition.Mountpoint)
@@ -80,4 +94,20 @@ func (s *DiskUsage) Run(ctx context.Context, dataCh chan<- []*pb.MetricsPayload_
 		Msg("Completed strategy")
 
 	return nil
+}
+
+func (s *DiskUsage) isExcluded(partition disk.PartitionStat) bool {
+	if shared.StrSliceContains(s.excludedFilesystems, strings.ToLower(partition.Fstype)) {
+		return true
+	}
+
+	if shared.StrSliceContains(s.excludedDevices, strings.ToLower(partition.Device)) {
+		return true
+	}
+
+	if shared.StrSliceContains(s.excludedMountPoints, strings.ToLower(partition.Mountpoint)) {
+		return true
+	}
+
+	return false
 }
