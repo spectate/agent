@@ -38,23 +38,27 @@ func InitConfig() {
 	if err := viper.ReadInConfig(); err == nil {
 		logger.Log.Debug().
 			Msg("Using config file: " + viper.ConfigFileUsed())
-	} else {
-		initDefaults()
-		logger.Log.Debug().
-			Msg("No config file found, writing defaults to file")
-		err := viper.WriteConfigAs(BaseDir + "/config.yaml")
-		if err != nil {
-			logger.Log.Panic().Err(err).Msg("Failed to write config file")
-			os.Exit(1)
-		}
+	}
+
+	setDefaults()
+
+	err := viper.WriteConfigAs(BaseDir + "/config.yaml")
+	if err != nil {
+		logger.Log.Panic().Err(err).Msg("Failed to write config file")
+		os.Exit(1)
 	}
 
 }
 
-func initDefaults() {
-	viper.SetDefault("version", 1)
-	viper.SetDefault("host.token", "")
+func setDefaults() {
 	viper.SetDefault("telemetry.error_reporting", true)
+
+	viper.SetDefault("checks.disk_usage.exclude.devices", []string{})
+	viper.SetDefault("checks.disk_usage.exclude.filesystems", []string{"squashfs", "vfat"})
+	viper.SetDefault("checks.disk_usage.exclude.mount_points", []string{})
+
+	viper.SetDefault("host.token", "")
+	viper.SetDefault("version", 1)
 }
 
 func Update() {
