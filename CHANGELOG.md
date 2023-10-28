@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/spectate/agent/compare/v1.1.0...v1.2.0) (2023-10-28)
+
+
+### Features
+
+* add installer and install script for linux and darwin ([#5](https://github.com/spectate/agent/issues/5)) ([cf448b9](https://github.com/spectate/agent/commit/cf448b9893d4bed4820f68455224515e61519afc))
+
 # [1.1.0](https://github.com/spectate/agent/compare/v1.0.0...v1.1.0) (2023-10-27)
 
 
