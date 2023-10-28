@@ -40,11 +40,12 @@ universal_binaries:
   - replace: false
 
 archives:
-  - format: binary
+  - id: binary
+    format: binary
     name_template: '{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}'
-    format_overrides:
-      - goos: windows
-        format: binary
+  - id: archive
+    format: tar.gz
+    name_template: '{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}'
 
 checksum:
   name_template: '{{ .ProjectName }}_{{ .Version }}_checksums.txt'
