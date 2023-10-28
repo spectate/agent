@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"context"
+	"github.com/spectate/agent/internal/logger"
 	"github.com/spectate/agent/pkg/service"
 	"github.com/spf13/cobra"
 )
@@ -13,12 +13,14 @@ var startCmd = &cobra.Command{
 	Long: `Start the Spectated agent. This will start the agent in the background and will
 	monitor the server.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		s, err := service.NewService()
+		if err != nil {
+			logger.Log.Panic().Err(err).Msg("Failed to create service")
+		}
 
-		agent := service.NewApp()
-
-		agent.Start(ctx)
+		if err := s.Run(); err != nil {
+			logger.Log.Panic().Err(err).Msg("Failed to run service")
+		}
 	},
 }
 
