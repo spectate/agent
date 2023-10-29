@@ -33,16 +33,6 @@ func (p *program) run() {
 }
 
 func NewService() (service.Service, error) {
-	serviceConfig := &service.Config{
-		Name:        "spectated",
-		DisplayName: "Spectated",
-		Description: "Spectate host monitoring agent",
-		Arguments:   []string{"start"},
-		Option: service.KeyValue{
-			"UserService": true,
-		},
-	}
-
 	prg := &program{exit: make(chan struct{})}
 
 	s, err := service.New(prg, serviceConfig)

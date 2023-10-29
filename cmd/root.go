@@ -42,7 +42,7 @@ func init() {
 	)
 	defer logger.ShutdownLogger()
 
-	rootCmd.PersistentFlags().StringVar(&config.CfgFile, "config", "", "config file (default is "+config.CfgFile+")")
+	rootCmd.PersistentFlags().StringVar(&config.CfgFile, "config", "", "config file")
 
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output")
 }
