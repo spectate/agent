@@ -1,3 +1,10 @@
+## [1.2.3](https://github.com/spectate/agent/compare/v1.2.2...v1.2.3) (2023-10-29)
+
+
+### Bug Fixes
+
+* **service:** split service config for nix and darwin ([#8](https://github.com/spectate/agent/issues/8)) ([c4ed474](https://github.com/spectate/agent/commit/c4ed4744a029d533f12d87b18a83992f201797b4))
+
 ## [1.2.2](https://github.com/spectate/agent/compare/v1.2.1...v1.2.2) (2023-10-29)
 
 
