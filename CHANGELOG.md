@@ -1,3 +1,10 @@
+## [1.2.2](https://github.com/spectate/agent/compare/v1.2.1...v1.2.2) (2023-10-29)
+
+
+### Bug Fixes
+
+* **service:** use lowercased service name ([9ea2949](https://github.com/spectate/agent/commit/9ea294916325568a0abc53e09a75e245673b20f1))
+
 ## [1.2.1](https://github.com/spectate/agent/compare/v1.2.0...v1.2.1) (2023-10-29)
 
 
