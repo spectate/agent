@@ -23,9 +23,9 @@ sudo systemctl stop spectated
 
 For MacOS, run the following command:
 ```bash
-launchctl load -w ~/Library/LaunchAgents/Spectated.plist
+launchctl load -w ~/Library/LaunchAgents/spectated.plist
 # to stop the service, run:
-launchctl unload -w ~/Library/LaunchAgents/Spectated.plist
+launchctl unload -w ~/Library/LaunchAgents/spectated.plist
 ```
 
 ## License
