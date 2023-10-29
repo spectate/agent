@@ -1,3 +1,10 @@
+## [1.2.1](https://github.com/spectate/agent/compare/v1.2.0...v1.2.1) (2023-10-29)
+
+
+### Bug Fixes
+
+* **installer:** update check for valid OS ([#6](https://github.com/spectate/agent/issues/6)) ([8815fd3](https://github.com/spectate/agent/commit/8815fd337d093d0db268f0cf7ef58fb5bbeb12b8))
+
 # [1.2.0](https://github.com/spectate/agent/compare/v1.1.0...v1.2.0) (2023-10-28)
 
 
