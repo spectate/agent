@@ -21,7 +21,7 @@ if [ -z "$ARCH" ]; then
   exit 1
 fi
 
-if [[ "$OS" != "ubuntu" && "$OS" != "macos" ]]; then
+if [[ "$OS" != "linux" && "$OS" != "darwin" ]]; then
   echo "Unsupported operating system: $OS"
   exit 1
 fi
