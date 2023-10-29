@@ -34,7 +34,7 @@ func (p *program) run() {
 
 func NewService() (service.Service, error) {
 	serviceConfig := &service.Config{
-		Name:        "Spectated",
+		Name:        "spectated",
 		DisplayName: "Spectated",
 		Description: "Spectate host monitoring agent",
 		Arguments:   []string{"start"},

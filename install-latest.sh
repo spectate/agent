@@ -68,6 +68,6 @@ if [[ "$OS" == "linux" ]]; then
     service spectated start
   fi
 elif [[ "$OS" == "darwin" ]]; then
-  launchctl load -w ~/Library/LaunchAgents/Spectated.plist
+  launchctl load -w ~/Library/LaunchAgents/spectated.plist
 fi
 echo "done"
