@@ -6,7 +6,9 @@ TOKEN=$1
 OS=$2
 ARCH=$3
 
-if [ -z "$TOKEN" ]; then
+CHECK_UPGRADE=$4
+
+if [ -z "$TOKEN" ] && [ "$CHECK_UPGRADE" != "--upgrade" ]; then
   echo "Missing token"
   exit 1
 fi
@@ -49,25 +51,36 @@ echo -n "Making spectated executable... "
 chmod +x /usr/bin/spectated
 echo "done"
 
-# Install service
-echo -n "Installing spectated as service... "
-/usr/bin/spectated install
-echo "done"
+if [[ "$CHECK_UPGRADE" != "--upgrade" ]]; then
+  # Install service
+  echo -n "Installing spectated as service... "
+  /usr/bin/spectated install
+  echo "done"
 
-# Run auth command
-echo -n "Registering this host in Spectate... "
-/usr/bin/spectated auth "$TOKEN"
-echo "done"
+  # Run auth command
+  echo -n "Registering this host in Spectate... "
+  /usr/bin/spectated auth "$TOKEN"
+  echo "done"
+fi
 
-# Start service
+# Start or Restart service
 echo -n "Starting spectated service... "
 if [[ "$OS" == "linux" ]]; then
   if [[ -x "$(command -v systemctl)" ]]; then
-    systemctl start spectated
+    if [[ "$CHECK_UPGRADE" == "--upgrade" ]]; then
+      systemctl restart spectated
+    else
+      systemctl start spectated
+    fi
   else
-    service spectated start
+    if [[ "$CHECK_UPGRADE" == "--upgrade" ]]; then
+      service spectated restart
+    else
+      service spectated start
+    fi
   fi
 elif [[ "$OS" == "darwin" ]]; then
+  launchctl unload -w ~/Library/LaunchAgents/spectated.plist
   launchctl load -w ~/Library/LaunchAgents/spectated.plist
 fi
 echo "done"
