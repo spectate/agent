@@ -79,11 +79,11 @@ func (s *DiskUsage) Run(ctx context.Context, dataCh chan<- []*pb.MetricsPayload_
 		batch.Gauge("system.disk_usage.total", float64(usage.Total)/1024, labels)
 		batch.Gauge("system.disk_usage.free", float64(usage.Free)/1024, labels)
 		batch.Gauge("system.disk_usage.used", float64(usage.Used)/1024, labels)
-		batch.Gauge("system.disk_usage.used_percent", usage.UsedPercent/100, labels)
+		batch.Gauge("system.disk_usage.used_percent", usage.UsedPercent, labels)
 		batch.Gauge("system.disk_usage.inodes_total", float64(usage.InodesTotal), labels)
 		batch.Gauge("system.disk_usage.inodes_used", float64(usage.InodesUsed), labels)
 		batch.Gauge("system.disk_usage.inodes_free", float64(usage.InodesFree), labels)
-		batch.Gauge("system.disk_usage.inodes_used_percent", usage.InodesUsedPercent/100, labels)
+		batch.Gauge("system.disk_usage.inodes_used_percent", usage.InodesUsedPercent, labels)
 	}
 
 	batch.Commit()
