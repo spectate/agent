@@ -1,3 +1,15 @@
+# [1.3.0](https://github.com/spectate/agent/compare/v1.2.3...v1.3.0) (2023-11-07)
+
+
+### Bug Fixes
+
+* **disk-usage:** correct invalid percentage calculation ([#11](https://github.com/spectate/agent/issues/11)) ([d151713](https://github.com/spectate/agent/commit/d15171382698a91645caef3ccf99a250585f3f7c))
+
+
+### Features
+
+* **installer:** add argument for upgrading agent ([#12](https://github.com/spectate/agent/issues/12)) ([aff138c](https://github.com/spectate/agent/commit/aff138c2f854c4c49e62b6722f1ee48a5e049b84))
+
 ## [1.2.3](https://github.com/spectate/agent/compare/v1.2.2...v1.2.3) (2023-10-29)
 
 
