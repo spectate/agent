@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/spectate/agent/compare/v1.3.0...v1.4.0) (2023-12-27)
+
+
+### Features
+
+* **check-net:** implement network interface metrics ([#17](https://github.com/spectate/agent/issues/17)) ([0c4202f](https://github.com/spectate/agent/commit/0c4202f6e64fb0b572a612b1571268b10fd723a7))
+
 # [1.3.0](https://github.com/spectate/agent/compare/v1.2.3...v1.3.0) (2023-11-07)
 
 
