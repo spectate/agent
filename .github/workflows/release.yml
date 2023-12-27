@@ -3,9 +3,7 @@ concurrency:
   group: main-release
   cancel-in-progress: true
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   vet-lint:
