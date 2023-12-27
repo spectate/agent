@@ -57,6 +57,8 @@ func setDefaults() {
 	viper.SetDefault("checks.disk_usage.exclude.filesystems", []string{"squashfs", "vfat"})
 	viper.SetDefault("checks.disk_usage.exclude.mount_points", []string{})
 
+	viper.SetDefault("checks.net.exclude.interfaces", []string{})
+
 	viper.SetDefault("host.token", "")
 	viper.SetDefault("version", 1)
 }
