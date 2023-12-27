@@ -1,3 +1,10 @@
+## [1.4.1](https://github.com/spectate/agent/compare/v1.4.0...v1.4.1) (2023-12-27)
+
+
+### Bug Fixes
+
+* **check-net:** remove println call in network strategy ([#19](https://github.com/spectate/agent/issues/19)) ([1b989b9](https://github.com/spectate/agent/commit/1b989b939ac62cf96cd7938d0ec6a38799cb3f87))
+
 # [1.4.0](https://github.com/spectate/agent/compare/v1.3.0...v1.4.0) (2023-12-27)
 
 
