@@ -2,7 +2,6 @@ package strategies
 
 import (
 	"context"
-	"fmt"
 	"github.com/shirou/gopsutil/v3/net"
 	"github.com/spectate/agent/internal/logger"
 	"github.com/spectate/agent/internal/shared"
@@ -50,7 +49,6 @@ func (s *Net) Run(ctx context.Context, dataCh chan<- []*pb.MetricsPayload_Metric
 
 	// We call a network interface "iface" to avoid confusion with the Go interface type
 	for _, ioCount := range netIOCounters {
-		fmt.Println(ioCount)
 		if s.isExcluded(ioCount.Name) {
 			continue
 		}
