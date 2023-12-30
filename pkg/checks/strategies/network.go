@@ -14,6 +14,7 @@ import (
 
 type Net struct {
 	opts               Options
+	includedInterfaces []string
 	excludedInterfaces []string
 	lastIOCounters     []net.IOCountersStat
 }
@@ -45,6 +46,7 @@ func (s *Net) Run(ctx context.Context, dataCh chan<- []*pb.MetricsPayload_Metric
 		return err
 	}
 
+	s.includedInterfaces = viper.GetStringSlice("checks.net.include.interfaces")
 	s.excludedInterfaces = viper.GetStringSlice("checks.net.exclude.interfaces")
 
 	// We call a network interface "iface" to avoid confusion with the Go interface type
@@ -102,8 +104,17 @@ func (s *Net) Run(ctx context.Context, dataCh chan<- []*pb.MetricsPayload_Metric
 }
 
 func (s *Net) isExcluded(iface string) bool {
-	if shared.StrSliceContains(s.excludedInterfaces, strings.ToLower(iface)) {
-		return true
+	if shared.StrSliceContains(s.includedInterfaces, iface) {
+		// Included interfaces take precedence over excluded interfaces
+		return false
+	}
+
+	for _, excludedInterface := range s.excludedInterfaces {
+		// If the interface is an exact match or a wildcard match, return true
+		if iface == excludedInterface ||
+			(strings.HasSuffix(iface, "*") && strings.HasPrefix(iface, excludedInterface[:len(excludedInterface)-1])) {
+			return true
+		}
 	}
 
 	return false

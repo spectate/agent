@@ -7,7 +7,7 @@ import (
 
 var (
 	Version     = "0.0.0+dev"
-	BuildDate   = " 2023-10-25T12:01:25Z"
+	BuildDate   = "2023-10-25T12:01:25Z"
 	Environment = "development"
 )
 
