@@ -57,7 +57,13 @@ func setDefaults() {
 	viper.SetDefault("checks.disk_usage.exclude.filesystems", []string{"squashfs", "vfat"})
 	viper.SetDefault("checks.disk_usage.exclude.mount_points", []string{})
 
-	viper.SetDefault("checks.net.exclude.interfaces", []string{})
+	// We have excluded some interfaces by default to avoid collecting metrics from
+	// interfaces that are not relevant to the user in most setups. For example, we don't want to
+	// collect metrics from docker interfaces.
+
+	// Include is used to override wildcards in exclude. Include does not support wildcards.
+	viper.SetDefault("checks.net.include.interfaces", []string{"en0", "eth0", "lo0"})
+	viper.SetDefault("checks.net.exclude.interfaces", []string{"br*", "docker*", "lo", "veth*", "utun*", "llw*", "utun*", "bridge*", "ap*", "anpi*", "awdl*", "gif*", "stf*", "en*"})
 
 	viper.SetDefault("host.token", "")
 	viper.SetDefault("version", 1)
