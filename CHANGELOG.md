@@ -1,3 +1,10 @@
+## [1.4.2](https://github.com/spectate/agent/compare/v1.4.1...v1.4.2) (2023-12-30)
+
+
+### Bug Fixes
+
+* **check-net:** add wildcards and update defaults to fix sending unne… ([#20](https://github.com/spectate/agent/issues/20)) ([c76834e](https://github.com/spectate/agent/commit/c76834e2aa6b607bdfe35a94d44b82132b39a777))
+
 ## [1.4.1](https://github.com/spectate/agent/compare/v1.4.0...v1.4.1) (2023-12-27)
 
 
