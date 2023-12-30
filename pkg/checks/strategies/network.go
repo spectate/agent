@@ -112,7 +112,7 @@ func (s *Net) isExcluded(iface string) bool {
 	for _, excludedInterface := range s.excludedInterfaces {
 		// If the interface is an exact match or a wildcard match, return true
 		if iface == excludedInterface ||
-			(strings.HasSuffix(iface, "*") && strings.HasPrefix(iface, excludedInterface[:len(excludedInterface)-1])) {
+			(strings.HasSuffix(excludedInterface, "*") && strings.HasPrefix(iface, excludedInterface[:len(excludedInterface)-1])) {
 			return true
 		}
 	}
