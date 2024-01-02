@@ -7,7 +7,7 @@ require (
 	github.com/go-resty/resty/v2 v2.10.0
 	github.com/kardianos/service v1.2.2
 	github.com/rs/zerolog v1.31.0
-	github.com/shirou/gopsutil/v3 v3.23.11
+	github.com/shirou/gopsutil/v3 v3.23.12
 	github.com/spf13/cobra v1.8.0
 	github.com/spf13/viper v1.18.2
 	google.golang.org/protobuf v1.32.0
