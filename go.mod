@@ -3,7 +3,7 @@ module github.com/spectate/agent
 go 1.21
 
 require (
-	github.com/getsentry/sentry-go v0.25.0
+	github.com/getsentry/sentry-go v0.26.0
 	github.com/go-resty/resty/v2 v2.11.0
 	github.com/kardianos/service v1.2.2
 	github.com/rs/zerolog v1.31.0
