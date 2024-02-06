@@ -6,7 +6,7 @@ require (
 	github.com/getsentry/sentry-go v0.26.0
 	github.com/go-resty/resty/v2 v2.11.0
 	github.com/kardianos/service v1.2.2
-	github.com/rs/zerolog v1.31.0
+	github.com/rs/zerolog v1.32.0
 	github.com/shirou/gopsutil/v3 v3.24.1
 	github.com/spf13/cobra v1.8.0
 	github.com/spf13/viper v1.18.2
