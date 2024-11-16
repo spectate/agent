@@ -19,7 +19,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v2
         with:
-          go-version: '1.21.2'
+          go-version: '1.23.3'
       - name: Get version
         id: get_version
         run: echo ::set-output name=VERSION::$(git describe --tags)
@@ -48,7 +48,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v2
         with:
-          go-version: '1.21.2'
+          go-version: '1.23.3'
       - name: Get version
         id: get_version
         run: echo ::set-output name=VERSION::$(git describe --tags)
