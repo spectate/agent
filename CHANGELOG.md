@@ -1,3 +1,10 @@
+## [1.4.3](https://github.com/spectate/agent/compare/v1.4.2...v1.4.3) (2024-11-16)
+
+
+### Bug Fixes
+
+* update semantic-release and force maintenance update ([53e4f8d](https://github.com/spectate/agent/commit/53e4f8d3f723787708e3a977acb161d57bcd4404))
+
 ## [1.4.2](https://github.com/spectate/agent/compare/v1.4.1...v1.4.2) (2023-12-30)
 
 
