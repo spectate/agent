@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/spectate/agent/compare/v1.4.3...v1.5.0) (2024-11-16)
+
+
+### Features
+
+* update go to 1.23.3 ([7afbfc2](https://github.com/spectate/agent/commit/7afbfc2e2cb38146a8dcc70dfd6338117c17b104))
+
 ## [1.4.3](https://github.com/spectate/agent/compare/v1.4.2...v1.4.3) (2024-11-16)
 
 
