@@ -1,0 +1,107 @@
+// Spectate host agent ingest protocol, version 2.
+//
+// One IngestRequest carries one shipping window (normally 60s) of samples
+// collected at a higher resolution (normally every 15s). The body is sent
+// gzip-compressed (`Content-Encoding: gzip`, `Content-Type:
+// application/x-protobuf; proto=spectate.agent.v2.IngestRequest`) to
+// `POST /agent-api/v2/ingest` with `Authorization: Bearer <host token>`.
+//
+// Layout is columnar:
+//   * all strings (metric names, label keys and values) live once in
+//     `strings`; series reference them by index,
+//   * every series (metric + label set) appears once and carries its samples
+//     as packed, delta-encoded timestamp and value columns.
+//
+// The canonical copy of this file lives in laravel/proto; the Go agent
+// generates its bindings from it (see agent/Makefile).
+syntax = "proto3";
+
+package spectate.agent.v2;
+
+option go_package = "github.com/spectate/agent/v2/internal/proto/agentv2;agentv2";
+option php_namespace = "App\\Proto\\V2";
+option php_metadata_namespace = "App\\Proto\\V2\\Metadata";
+
+message IngestRequest {
+  // Always 2 for this schema.
+  uint32 protocol_version = 1;
+
+  // Agent build version, e.g. "2.0.0".
+  string agent_version = 2;
+
+  // Random id generated when the agent's spool is created; together with
+  // `batch_seq` it identifies a batch so replays can be de-duplicated.
+  string agent_instance = 3;
+
+  // Monotonic per agent_instance, starting at 1. Spooled batches are replayed
+  // in increasing order.
+  uint64 batch_seq = 4;
+
+  // Unix time (ms) at which the batch was cut.
+  int64 created_at_ms = 5;
+
+  // Hex sha256 of the agent's canonical HostInfo. Always present.
+  string host_info_hash = 6;
+
+  // Only present when the host info changed since it was last acknowledged,
+  // on the first batch after start, or when the server asked for it
+  // (`resend_host_info` in the response).
+  HostInfo host_info = 7;
+
+  // Base timestamp (unix ms). The first timestamp of each series is encoded
+  // relative to it.
+  int64 base_timestamp_ms = 8;
+
+  // String table. Index 0 is always the empty string.
+  repeated string strings = 9;
+
+  // Series dictionary + samples; the position in this list is the series id.
+  repeated Series series = 10;
+}
+
+message Series {
+  // Index into IngestRequest.strings of the metric name (v1 agent keys, e.g.
+  // "system.cpu.idle", "system.disk_usage.used_percent").
+  uint32 metric = 1;
+
+  // Packed label pairs as string-table indexes: [key0, value0, key1, value1, ...].
+  // Order is significant and preserved (it becomes label_names/label_values).
+  repeated uint32 labels = 2;
+
+  // Sample timestamps in ms, delta-encoded: t[0] = base_timestamp_ms + d[0],
+  // t[i] = t[i-1] + d[i].
+  repeated sint64 timestamp_deltas = 3;
+
+  // Values are carried in exactly one of the two encodings below; both have
+  // one entry per timestamp.
+  //
+  // Decimal encoding: integers delta-encoded like timestamps; the value is
+  // the running sum divided by 10^scale. Used when every value in the series
+  // is exactly representable with `scale` decimals (counters, sizes,
+  // rounded percentages).
+  uint32 scale = 4;
+  repeated sint64 value_deltas = 5;
+
+  // Raw IEEE-754 doubles, used when the decimal encoding would be lossy.
+  repeated double values = 6;
+}
+
+message Label {
+  string key = 1;
+  string value = 2;
+}
+
+message HostInfo {
+  // Same keys as the v1 `host.info` INFO metric: hostname, os, platform,
+  // platform_family, platform_version, kernel_version, kernel_arch,
+  // virtualization_system, virtualization_role, host_id.
+  repeated Label info = 1;
+
+  // One entry per logical CPU package/core as reported by the OS, with the
+  // same keys as the v1 `host.cpus` INFO metric.
+  repeated Cpu cpus = 2;
+
+  message Cpu {
+    repeated Label info = 1;
+  }
+}

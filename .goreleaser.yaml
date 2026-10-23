@@ -1,51 +1,73 @@
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
-# vim: set ts=2 sw=2 tw=0 fo=cnqoj
-project_name: spectated
+version: 2
+project_name: spectate-agent
+
+# Released by .github/workflows/release.yml when a v2.x.y tag is pushed
+# (`make snapshot` builds locally without publishing).
 
 before:
   hooks:
-    - go mod tidy
+    - go mod tidy -diff
+    - go test ./...
+    # install.sh with this release as its default version, published as a
+    # release asset (see README "Installer").
+    - mkdir -p build
+    - sh -c 'sed "s/^DEFAULT_VERSION=\"\"$/DEFAULT_VERSION=\"{{ .Version }}\"/" install.sh > build/install.sh'
+    - sh -c 'grep -q "^DEFAULT_VERSION=\"{{ .Version }}\"$" build/install.sh'
+
+builds:
+  - id: spectate-agent
+    main: ./cmd/spectate-agent
+    binary: spectate-agent
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    ldflags:
+      - -s -w
+      - -X github.com/spectate/agent/v2/internal/version.Version={{ .Version }}
+      - -X github.com/spectate/agent/v2/internal/version.Commit={{ .ShortCommit }}
+      - -X github.com/spectate/agent/v2/internal/version.BuildDate={{ .Date }}
+      - -X github.com/spectate/agent/v2/internal/version.DefaultAPIURL={{ envOrDefault "API_URL" "https://api.spectate.net" }}
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+
+archives:
+  - id: binary
+    formats: [binary]
+    name_template: "{{ .Binary }}_{{ .Os }}_{{ .Arch }}"
+  - id: tarball
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: checksums.txt
+  extra_files:
+    - glob: build/install.sh
 
 release:
   github:
     owner: spectate
     name: agent
+  # v1 (spectated) installers download releases/latest/download/spectated_*,
+  # so v1.5.0 must stay the "latest" release until v1 is retired. install.sh
+  # finds the newest v2 release itself.
+  make_latest: false
+  prerelease: auto
+  extra_files:
+    - glob: build/install.sh
 
-builds:
-  - id: "spectated"
-    main: "./main/main.go"
-    binary: "spectated"
-    env:
-      - CGO_ENABLED=1
-      - ENVIRONMENT={{ .Env.ENVIRONMENT }}
-      - API_BASE_URL={{ .Env.API_BASE_URL }}
-      - LOG_LEVEL={{ .Env.LOG_LEVEL }}
-      - SENTRY_DSN={{ .Env.SENTRY_DSN }}
-    goos:
-      #      - linux
-      #      - windows
-      - darwin
-    goarch:
-      - amd64
-      - arm64
-    ldflags:
-      - -X 'github.com/spectate/agent/internal/version.Version={{.Version}}'
-      - -X 'github.com/spectate/agent/internal/version.BuildDate={{.Date}}'
-      - -X 'github.com/spectate/agent/internal/version.Environment={{ .Env.ENVIRONMENT }}'
-      - -X 'github.com/spectate/agent/internal/logger.LogLevel={{ .Env.LOG_LEVEL }}'
-      - -X 'github.com/spectate/agent/internal/http.ApiBaseUrl={{ .Env.API_BASE_URL }}'
-      - -X 'github.com/spectate/agent/pkg/telemetry.SentryDsn={{ .Env.SENTRY_DSN }}'
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
 
-universal_binaries:
-  - replace: false
-
-archives:
-  - id: binary
-    format: binary
-    name_template: '{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}'
-  - id: archive
-    format: tar.gz
-    name_template: '{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}'
-
-checksum:
-  name_template: '{{ .ProjectName }}_{{ .Version }}_checksums.txt'
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^chore\\(deps\\)"
+      - "^Merge "

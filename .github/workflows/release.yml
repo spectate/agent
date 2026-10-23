@@ -1,51 +1,67 @@
-name: Create Release
-concurrency:
-  group: main-release
-  cancel-in-progress: true
+# Publishes a GitHub release for every v2.x.y tag (git tag -s v2.0.0 && git push origin v2.0.0).
+# Releases are not marked "latest": that stays on v1 (spectated) for its installers.
+name: Release
+
 on:
-  workflow_dispatch:
+  push:
+    tags:
+      - "v2.*.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  vet-lint:
-    if: "!contains(github.event.head_commit.message, 'chore(release):')"
-    runs-on: ubuntu-latest
+  test:
+    name: vet + test -race
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v2
-
-      - name: Setup Go
-        uses: actions/setup-go@v2
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          go-version: '1.21.x'
+          persist-credentials: false
 
-      - name: Install dependencies
-        run: |
-          go version
-          go mod download
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
 
-      - name: Run vet
+      - name: Vet and test
         run: |
+          test -z "$(gofmt -l .)"
           go vet ./...
+          GOOS=darwin go vet ./...
+          go test -race ./...
 
-  semantic-release:
-    needs: vet-lint
-    runs-on: ubuntu-latest
-    outputs:
-      version_updated: ${{ steps.check_version.outputs.version_updated }}
+  release:
+    name: goreleaser
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v2
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Setup Node
-        uses: actions/setup-node@v2
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          node-version: '20'
+          go-version-file: go.mod
+          cache: false
 
-      - name: NPM install
-        run: npm ci
-
-      - name: Run semantic-release
-        run: npx semantic-release
+      - name: Release
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

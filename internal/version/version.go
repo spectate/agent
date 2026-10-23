@@ -1,21 +1,20 @@
+// Package version carries build metadata, set via -ldflags at release time.
 package version
 
-import (
-	"fmt"
-	"time"
-)
+import "runtime"
 
 var (
-	Version     = "0.0.0+dev"
-	BuildDate   = "2023-10-25T12:01:25Z"
-	Environment = "development"
+	// Version is the agent release (e.g. "2.0.0").
+	Version = "2.0.0-dev"
+	// Commit is the git commit the binary was built from.
+	Commit = "unknown"
+	// BuildDate is the RFC 3339 build timestamp.
+	BuildDate = "unknown"
+	// DefaultAPIURL is the API base URL used when none is configured.
+	DefaultAPIURL = "https://api.spectate.net"
 )
 
-func init() {
-	parsedDate, err := time.Parse(time.RFC3339, BuildDate)
-	if err != nil {
-		fmt.Printf("Error parsing BuildDate: %v\n", err)
-	} else {
-		BuildDate = parsedDate.Format("Mon Jan 2 15:04:05 MST 2006")
-	}
+// UserAgent identifies the agent to the API.
+func UserAgent() string {
+	return "spectate-agent/" + Version + " (" + runtime.GOOS + "/" + runtime.GOARCH + ")"
 }
