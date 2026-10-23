@@ -3,17 +3,26 @@ version: 2
 project_name: spectate-agent
 
 # Released by .github/workflows/release.yml when a v2.x.y tag is pushed
-# (`make snapshot` builds locally without publishing).
+# (`make snapshot` builds locally without publishing or signing).
+#
+# Release signing: checksums.txt is signed with the ed25519 key in
+# $SPECTATE_RELEASE_SIGNING_KEY (checksums.txt.sig), and the public key in
+# $SPECTATE_RELEASE_PUBLIC_KEY is embedded in the binaries, which verify the
+# signature in `spectate-agent update`. Without the private key the sign
+# step fails and nothing is published.
 
 before:
   hooks:
     - go mod tidy -diff
     - go test ./...
-    # install.sh with this release as its default version, published as a
-    # release asset (see README "Installer").
+    # install.sh with this release as its default version and the release
+    # public key, published as a release asset (see README "Install").
     - mkdir -p build
-    - sh -c 'sed "s/^DEFAULT_VERSION=\"\"$/DEFAULT_VERSION=\"{{ .Version }}\"/" install.sh > build/install.sh'
+    - sh -c 'sed -e "s/^DEFAULT_VERSION=\"\"$/DEFAULT_VERSION=\"{{ .Version }}\"/" -e "s|^UPDATE_PUBLIC_KEY=.*$|UPDATE_PUBLIC_KEY=\"{{ envOrDefault "SPECTATE_RELEASE_PUBLIC_KEY" "" }}\"|" install.sh > build/install.sh'
     - sh -c 'grep -q "^DEFAULT_VERSION=\"{{ .Version }}\"$" build/install.sh'
+    - sh -c 'grep -qx "UPDATE_PUBLIC_KEY=\"{{ envOrDefault "SPECTATE_RELEASE_PUBLIC_KEY" "" }}\"" build/install.sh'
+    # Signs checksums.txt (see signs below).
+    - go build -trimpath -o build/release-sign ./cmd/release-sign
 
 builds:
   - id: spectate-agent
@@ -30,6 +39,7 @@ builds:
       - -X github.com/spectate/agent/v2/internal/version.Commit={{ .ShortCommit }}
       - -X github.com/spectate/agent/v2/internal/version.BuildDate={{ .Date }}
       - -X github.com/spectate/agent/v2/internal/version.DefaultAPIURL={{ envOrDefault "API_URL" "https://api.spectate.net" }}
+      - -X github.com/spectate/agent/v2/internal/version.UpdatePublicKey={{ envOrDefault "SPECTATE_RELEASE_PUBLIC_KEY" "" }}
     goos: [linux, darwin]
     goarch: [amd64, arm64]
 
@@ -48,6 +58,17 @@ checksum:
   name_template: checksums.txt
   extra_files:
     - glob: build/install.sh
+
+# checksums.txt.sig: base64 ed25519 signature of checksums.txt, uploaded as a
+# release asset. release-sign fails without $SPECTATE_RELEASE_SIGNING_KEY, or
+# when $SPECTATE_RELEASE_PUBLIC_KEY is set and is not its public half.
+signs:
+  - id: checksums
+    artifacts: checksum
+    cmd: ./build/release-sign
+    args: ["sign", "${artifact}"]
+    signature: "${artifact}.sig"
+    output: true
 
 release:
   github:

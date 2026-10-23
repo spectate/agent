@@ -6,11 +6,15 @@ VERSION ?= $(shell git describe --tags --match 'v2.*' --always --dirty 2>/dev/nu
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 API_URL ?= https://api.spectate.net
+# Release signing public key (base64 ed25519) that `spectate-agent update`
+# verifies checksums.txt.sig with; empty for development builds.
+UPDATE_PUBLIC_KEY ?= $(SPECTATE_RELEASE_PUBLIC_KEY)
 LDFLAGS := -s -w \
 	-X '$(PKG)/internal/version.Version=$(VERSION)' \
 	-X '$(PKG)/internal/version.Commit=$(COMMIT)' \
 	-X '$(PKG)/internal/version.BuildDate=$(DATE)' \
-	-X '$(PKG)/internal/version.DefaultAPIURL=$(API_URL)'
+	-X '$(PKG)/internal/version.DefaultAPIURL=$(API_URL)' \
+	-X '$(PKG)/internal/version.UpdatePublicKey=$(UPDATE_PUBLIC_KEY)'
 GOFLAGS := -trimpath
 # Copy of the canonical schema in spectate/platform (laravel/proto). The M
 # option maps it to this module whatever its go_package says.
@@ -63,8 +67,9 @@ bench:
 release:
 	goreleaser release --clean
 
+# Unsigned: release signing needs $SPECTATE_RELEASE_SIGNING_KEY (CI only).
 snapshot:
-	goreleaser release --snapshot --clean
+	goreleaser release --snapshot --clean --skip=sign
 
 clean:
 	rm -rf bin dist

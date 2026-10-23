@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"flag"
 	"fmt"
@@ -10,10 +11,15 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
+
+	// Bundled Mozilla CA roots, used only when the host has no CA bundle
+	// (minimal images, appliances): otherwise TLS to the API would fail.
+	_ "golang.org/x/crypto/x509roots/fallback"
 
 	"github.com/spectate/agent/v2/internal/agent"
 	"github.com/spectate/agent/v2/internal/collector"
@@ -22,6 +28,7 @@ import (
 	"github.com/spectate/agent/v2/internal/service"
 	"github.com/spectate/agent/v2/internal/spool"
 	"github.com/spectate/agent/v2/internal/transport"
+	"github.com/spectate/agent/v2/internal/update"
 	"github.com/spectate/agent/v2/internal/version"
 )
 
@@ -31,8 +38,9 @@ Usage:
   spectate-agent register --token <install token> [--api-url URL] [--force]
   spectate-agent import-legacy [--config /etc/spectated/config.yaml] [--api-url URL]
   spectate-agent run
-  spectate-agent install [--user spectate-agent]   (root; systemd / launchd)
+  spectate-agent install [--user spectate-agent] [--auto-update]   (root; systemd / launchd)
   spectate-agent uninstall
+  spectate-agent update [--version X] [--check] [--if-newer]      (root)
   spectate-agent status
   spectate-agent version
 
@@ -59,6 +67,9 @@ func main() {
 	switch cmd {
 	case "run":
 		err = runAgent(settings, logger)
+		if errors.Is(err, agent.ErrHostDeleted) {
+			os.Exit(service.ExitHostDeleted) // already logged; the unit does not restart on it
+		}
 	case "register":
 		err = register(settings, args)
 	case "import-legacy":
@@ -67,6 +78,8 @@ func main() {
 		err = install(args)
 	case "uninstall":
 		err = service.Uninstall()
+	case "update":
+		err = selfUpdate(args)
 	case "status":
 		err = status(settings)
 	case "version", "--version", "-v":
@@ -137,6 +150,9 @@ func register(settings config.Settings, args []string) error {
 		return errors.New("--token is required")
 	}
 	if existing, err := config.LoadState(settings.StateDir); err == nil && existing.HostToken != "" && !*force {
+		if existing.HostDeleted {
+			return fmt.Errorf("host %s was removed from Spectate; use --force to register this machine again", existing.HostUUID)
+		}
 		return fmt.Errorf("already registered as host %s (use --force to register again)", existing.HostUUID)
 	}
 
@@ -161,7 +177,11 @@ func register(settings config.Settings, args []string) error {
 	if err != nil {
 		return fmt.Errorf("register: %w", err)
 	}
+	if off := time.Duration(resp.ClockOffsetMs) * time.Millisecond; off.Abs() > 30*time.Second {
+		fmt.Fprintf(os.Stderr, "warning: host clock is off by %ds; samples are corrected by the server, but fix NTP\n", int64(off.Abs().Seconds()))
+	}
 
+	// A fresh state: also clears the host_deleted marker of a previous registration.
 	if err := config.SaveState(settings.StateDir, config.State{
 		APIURL:    base,
 		HostToken: resp.HostToken,
@@ -201,6 +221,7 @@ func install(args []string) error {
 	fs := flag.NewFlagSet("install", flag.ExitOnError)
 	user := fs.String("user", service.Name, "service user (Linux)")
 	envFile := fs.String("env-file", "/etc/spectate-agent/agent.env", "EnvironmentFile for the unit (Linux)")
+	autoUpdate := fs.Bool("auto-update", false, "also install a daily timer that runs `update --if-newer` (Linux)")
 	_ = fs.Parse(args)
 
 	bin, err := os.Executable()
@@ -210,10 +231,16 @@ func install(args []string) error {
 	if bin, err = filepath.EvalSymlinks(bin); err != nil {
 		return err
 	}
-	if err := service.Install(service.Options{Binary: bin, User: *user, EnvFile: *envFile}); err != nil {
+	if *autoUpdate && runtime.GOOS != "linux" {
+		return errors.New("--auto-update is only supported on Linux (systemd)")
+	}
+	if err := service.Install(service.Options{Binary: bin, User: *user, EnvFile: *envFile, AutoUpdate: *autoUpdate}); err != nil {
 		return err
 	}
 	fmt.Println("spectate-agent service installed and started.")
+	if *autoUpdate {
+		fmt.Printf("Automatic updates enabled (%s.timer, daily).\n", service.UpdateName)
+	}
 	return nil
 }
 
@@ -233,5 +260,119 @@ func status(settings config.Settings) error {
 	fmt.Printf("collection:   every %ds, shipped every %ds\n", st.Remote.CollectionInterval, st.Remote.IngestInterval)
 	fmt.Printf("collectors:   %s\n", strings.Join(st.Remote.Collectors, ", "))
 	fmt.Printf("spool:        %d batches, %d bytes\n", sp.Len(), sp.Bytes())
+	if st.AvailableUpdate != nil && version.Compare(st.AvailableUpdate.Version, version.Version) > 0 {
+		fmt.Printf("update:       %s available: sudo spectate-agent update\n", st.AvailableUpdate.Version)
+	}
+	if st.HostDeleted {
+		fmt.Println("host:         removed from Spectate; the agent no longer runs. Remove it: sudo spectate-agent uninstall")
+	}
+	return nil
+}
+
+// selfUpdate replaces this binary with a verified release and restarts the
+// service. The running agent cannot do this itself (it is unprivileged), so
+// this runs as root, by hand or from the auto-update timer.
+func selfUpdate(args []string) error {
+	fs := flag.NewFlagSet("update", flag.ExitOnError)
+	want := fs.String("version", "", "install this release (e.g. 2.1.0; may be older or a pre-release)")
+	check := fs.Bool("check", false, "only print the current and latest version")
+	ifNewer := fs.Bool("if-newer", false, "do nothing, quietly, unless a newer release exists (for the timer)")
+	insecure := fs.Bool("insecure-skip-signature", false, "skip the release signature check (sha256 is still verified)")
+	noRestart := fs.Bool("no-restart", false, "do not restart the service")
+	_ = fs.Parse(args)
+
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		return fmt.Errorf("update is not supported on %s", runtime.GOOS)
+	}
+	apiURL := update.DefaultAPIURL
+	if v := os.Getenv("SPECTATE_UPDATE_API_URL"); v != "" {
+		if !version.IsDev() {
+			return errors.New("SPECTATE_UPDATE_API_URL is only honoured by development builds")
+		}
+		apiURL = v
+	}
+
+	var pub ed25519.PublicKey
+	switch {
+	case *insecure:
+		if !*check {
+			fmt.Fprintln(os.Stderr, "warning: --insecure-skip-signature: the release signature is not verified")
+		}
+	case version.UpdatePublicKey != "":
+		var err error
+		if pub, err = update.ParsePublicKey(version.UpdatePublicKey); err != nil {
+			return err
+		}
+	case !*check:
+		return errors.New("this build has no release signing key (development build): refusing to update " +
+			"without signature verification; pass --insecure-skip-signature to update anyway")
+	}
+
+	client, err := update.New(apiURL, pub)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	var rel *update.Release
+	if *want != "" {
+		rel, err = client.ByVersion(ctx, *want)
+	} else {
+		rel, err = client.Latest(ctx)
+	}
+	if err != nil {
+		return fmt.Errorf("find release: %w", err)
+	}
+	target := rel.Version()
+	cmp := version.Compare(target, version.Version)
+
+	if *check {
+		fmt.Printf("current: %s\nlatest:  %s\n", version.Version, target)
+		if cmp > 0 {
+			fmt.Println("An update is available: sudo spectate-agent update")
+		}
+		return nil
+	}
+	if cmp <= 0 && (*ifNewer || *want == "") {
+		if !*ifNewer {
+			fmt.Printf("spectate-agent %s is up to date (newest release: %s).\n", version.Version, target)
+		}
+		return nil
+	}
+
+	bin, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	if bin, err = filepath.EvalSymlinks(bin); err != nil {
+		return err
+	}
+	fmt.Printf("Updating spectate-agent %s -> %s (%s)\n", version.Version, target, update.BinaryName(runtime.GOOS, runtime.GOARCH))
+	data, err := client.Download(ctx, rel, runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		return err
+	}
+	if err := update.Install(data, bin, target); err != nil {
+		return fmt.Errorf("install %s: %w", bin, err)
+	}
+	if pub != nil {
+		fmt.Printf("Installed spectate-agent %s at %s (signature and checksum verified).\n", target, bin)
+	} else {
+		fmt.Printf("Installed spectate-agent %s at %s (checksum verified, signature NOT verified).\n", target, bin)
+	}
+
+	switch {
+	case *noRestart || !service.Installed():
+		fmt.Printf("Restart the agent to run the new version: %s\n", service.RestartHint())
+	case runtime.GOOS == "linux":
+		// From the timer, leave a stopped (or failed) agent stopped.
+		if err := service.Restart(*ifNewer); err != nil {
+			return fmt.Errorf("installed, but restarting failed: %w", err)
+		}
+		fmt.Println("Restarted spectate-agent.")
+	default:
+		fmt.Printf("Restart the agent to run the new version: %s\n", service.RestartHint())
+	}
 	return nil
 }

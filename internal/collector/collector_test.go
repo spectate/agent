@@ -2,6 +2,7 @@ package collector
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -142,5 +143,95 @@ func TestSystemCollectorsRunOnThisHost(t *testing.T) {
 	info, err := HostInfo(ctx)
 	if err != nil || Hostname(info) == "" {
 		t.Fatalf("host info: %v", err)
+	}
+}
+
+func TestDefaultsExcludeNetworkFilesystems(t *testing.T) {
+	d := &Disk{}
+	d.Configure(config.DefaultRemote())
+	for _, fs := range []string{"nfs", "nfs4", "cifs", "smbfs", "smb3", "afpfs", "webdav", "autofs", "fuse.sshfs", "ceph", "glusterfs", "fuse.glusterfs", "9p"} {
+		if !d.Excluded(disk.PartitionStat{Mountpoint: "/mnt/x", Fstype: fs}) {
+			t.Errorf("%s should be excluded by default", fs)
+		}
+	}
+	for _, fs := range []string{"ext4", "xfs", "btrfs", "zfs", "apfs"} {
+		if d.Excluded(disk.PartitionStat{Mountpoint: "/data", Fstype: fs}) {
+			t.Errorf("%s should be collected", fs)
+		}
+	}
+}
+
+// A mountpoint whose statfs hangs (dead NFS server) must not hide the other
+// disks, and must not be queried again while the first call is stuck.
+func TestDiskSkipsHungMountpoint(t *testing.T) {
+	release := make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	t.Cleanup(unblock)
+	var mu sync.Mutex
+	calls := map[string]int{}
+
+	d := &Disk{UsageTimeout: 50 * time.Millisecond}
+	d.Configure(config.DefaultRemote())
+	d.partitions = func(context.Context, bool) ([]disk.PartitionStat, error) {
+		return []disk.PartitionStat{
+			{Mountpoint: "/", Device: "/dev/sda1", Fstype: "ext4"},
+			{Mountpoint: "/mnt/dead", Device: "/dev/sdc1", Fstype: "ext4"},
+			{Mountpoint: "/data", Device: "/dev/sdb1", Fstype: "xfs"},
+		}, nil
+	}
+	d.usage = func(_ context.Context, path string) (*disk.UsageStat, error) {
+		mu.Lock()
+		calls[path]++
+		mu.Unlock()
+		if path == "/mnt/dead" {
+			<-release // uninterruptible, ignores ctx
+		}
+		return &disk.UsageStat{Path: path, Total: 100, Used: 40, Free: 60, UsedPercent: 40}, nil
+	}
+
+	for round := range 3 {
+		emit, got := record()
+		start := time.Now()
+		if err := d.Collect(context.Background(), time.Now(), emit); err != nil {
+			t.Fatal(err)
+		}
+		took := time.Since(start)
+		if round == 0 && took > time.Second {
+			t.Fatalf("collect took %v", took)
+		}
+		if round > 0 && took > 40*time.Millisecond {
+			t.Fatalf("round %d waited %v on the hung mount again", round, took)
+		}
+		var mounts []string
+		for _, s := range got["system.disk_usage.total"] {
+			mounts = append(mounts, s.labels[0].Value)
+		}
+		if len(mounts) != 2 || mounts[0] != "/" || mounts[1] != "/data" {
+			t.Fatalf("round %d: mounts = %v, want [/ /data]", round, mounts)
+		}
+	}
+	mu.Lock()
+	if calls["/mnt/dead"] != 1 || calls["/"] != 3 {
+		t.Fatalf("calls = %v: the hung mount must be queried once", calls)
+	}
+	mu.Unlock()
+	if hung := d.Hung(); len(hung) != 1 || hung[0] != "/mnt/dead" {
+		t.Fatalf("Hung() = %v", hung)
+	}
+
+	// Once the call returns, the mountpoint is collected again.
+	unblock()
+	for deadline := time.Now().Add(5 * time.Second); len(d.Hung()) > 0; time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("hung call never cleared")
+		}
+	}
+	emit, got := record()
+	if err := d.Collect(context.Background(), time.Now(), emit); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(got["system.disk_usage.total"]); n != 3 {
+		t.Fatalf("after recovery: %d mounts, want 3", n)
 	}
 }

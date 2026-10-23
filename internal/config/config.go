@@ -45,7 +45,15 @@ func DefaultRemote() Remote {
 	r.CollectionInterval = 15
 	r.IngestInterval = 60
 	r.Collectors = []string{"cpu", "memory", "load", "disk", "net", "uptime", "agent"}
-	r.Disk.ExcludeFilesystems = []string{"squashfs", "vfat"}
+	// Network and automount filesystems: statfs on a dead server blocks
+	// (uninterruptibly), and their usage belongs to the server that exports
+	// them. On Linux gopsutil already skips "nodev" filesystems, which covers
+	// these; macOS lists every mount, so the list is what keeps them out there.
+	r.Disk.ExcludeFilesystems = []string{
+		"squashfs", "vfat",
+		"nfs", "nfs4", "cifs", "smbfs", "smb3", "afpfs", "webdav", "autofs",
+		"fuse.sshfs", "ceph", "glusterfs", "fuse.glusterfs", "9p",
+	}
 	r.Net.IncludeInterfaces = []string{"en0", "eth0", "lo0"}
 	r.Net.ExcludeInterfaces = []string{"lo", "br*", "bridge*", "docker*", "veth*", "virbr*", "cni*", "flannel*", "cali*", "utun*", "llw*", "ap*", "anpi*", "awdl*", "gif*", "stf*"}
 	return r
@@ -128,11 +136,22 @@ func env(key, fallback string) string {
 
 // State is persisted in <state dir>/state.json (mode 0600).
 type State struct {
-	APIURL    string    `json:"api_url"`
-	HostToken string    `json:"host_token"`
-	HostUUID  string    `json:"host_uuid,omitempty"`
-	Remote    Remote    `json:"config"`
-	UpdatedAt time.Time `json:"updated_at"`
+	APIURL    string `json:"api_url"`
+	HostToken string `json:"host_token"`
+	HostUUID  string `json:"host_uuid,omitempty"`
+	Remote    Remote `json:"config"`
+	// HostDeleted is set when the API answered 410 HOST_DELETED: the agent
+	// refuses to run until `register --force` replaces the state.
+	HostDeleted bool `json:"host_deleted,omitempty"`
+	// AvailableUpdate is the newer release the API last announced.
+	AvailableUpdate *AvailableUpdate `json:"available_update,omitempty"`
+	UpdatedAt       time.Time        `json:"updated_at"`
+}
+
+// AvailableUpdate is a newer agent release announced by the API.
+type AvailableUpdate struct {
+	Version    string `json:"version"`
+	ReleaseURL string `json:"release_url,omitempty"`
 }
 
 // ErrNotRegistered is returned when no host token is stored.

@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/shirou/gopsutil/v4 v4.26.9
+	golang.org/x/crypto/x509roots/fallback v0.0.0-20261020153306-9f2b28d4331a
 	google.golang.org/protobuf v1.36.12
 )
 

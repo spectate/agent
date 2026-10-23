@@ -25,20 +25,62 @@ func Install(o Options) error {
 	if err := os.WriteFile(UnitPath, []byte(unit), 0o644); err != nil {
 		return fmt.Errorf("write unit: %w", err)
 	}
+	if o.AutoUpdate {
+		svc, timer, err := UpdateUnits(o)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(UpdateServicePath, []byte(svc), 0o644); err != nil {
+			return fmt.Errorf("write update unit: %w", err)
+		}
+		if err := os.WriteFile(UpdateTimerPath, []byte(timer), 0o644); err != nil {
+			return fmt.Errorf("write update timer: %w", err)
+		}
+	}
 	if err := run("systemctl", "daemon-reload"); err != nil {
 		return err
 	}
-	return run("systemctl", "enable", "--now", Name)
+	if err := run("systemctl", "enable", "--now", Name); err != nil {
+		return err
+	}
+	if o.AutoUpdate {
+		return run("systemctl", "enable", "--now", UpdateName+".timer")
+	}
+	return nil
 }
 
-// Uninstall stops and removes the unit (state in /var/lib is kept).
+// Uninstall stops and removes the units, including the auto-update timer
+// (state in /var/lib is kept).
 func Uninstall() error {
 	if os.Geteuid() != 0 {
 		return errors.New("uninstall must run as root")
 	}
+	if _, err := os.Stat(UpdateTimerPath); err == nil {
+		_ = run("systemctl", "disable", "--now", UpdateName+".timer")
+	}
 	_ = run("systemctl", "disable", "--now", Name)
-	if err := os.Remove(UnitPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+	for _, path := range []string{UnitPath, UpdateServicePath, UpdateTimerPath} {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
 	}
 	return run("systemctl", "daemon-reload")
 }
+
+// Installed reports whether the systemd unit is installed.
+func Installed() bool {
+	_, err := os.Stat(UnitPath)
+	return err == nil
+}
+
+// Restart restarts the installed service. With onlyIfRunning a stopped (or
+// failed) service is left alone (systemctl try-restart).
+func Restart(onlyIfRunning bool) error {
+	if onlyIfRunning {
+		return run("systemctl", "try-restart", Name)
+	}
+	return run("systemctl", "restart", Name)
+}
+
+// RestartHint returns the command that restarts the service.
+func RestartHint() string { return "sudo systemctl restart " + Name }

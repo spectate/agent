@@ -155,6 +155,23 @@ func (s *Spool) Remove(e Entry) error {
 	return err
 }
 
+// Clear deletes every spooled batch and returns how many there were.
+func (s *Spool) Clear() (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	n := len(s.entries)
+	var firstErr error
+	for _, e := range s.entries {
+		if err := os.Remove(filepath.Join(s.dir, e.Name)); err != nil && !errors.Is(err, os.ErrNotExist) && firstErr == nil {
+			firstErr = err
+		}
+	}
+	s.entries = nil
+	s.bytes = 0
+	return n, firstErr
+}
+
 // Len returns the number of spooled batches.
 func (s *Spool) Len() int {
 	s.mu.Lock()

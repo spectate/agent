@@ -45,8 +45,11 @@ type fakeAPI struct {
 	batches  []received
 	failNext int    // respond 503 to this many requests
 	status   int    // when non-zero, respond with this status
+	errBody  string // body of the status response (default INVALID_PAYLOAD)
 	resend   bool   // ask for host info once
 	config   string // JSON config to return
+	extra    map[string]any
+	requests int
 	srv      *httptest.Server
 }
 
@@ -67,6 +70,7 @@ func (f *fakeAPI) handle(w http.ResponseWriter, r *http.Request) {
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.requests++
 	if f.failNext > 0 {
 		f.failNext--
 		w.Header().Set("Retry-After", "0")
@@ -74,8 +78,12 @@ func (f *fakeAPI) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if f.status != 0 {
+		body := f.errBody
+		if body == "" {
+			body = `{"error":{"code":"INVALID_PAYLOAD","message":"nope"}}`
+		}
 		w.WriteHeader(f.status)
-		_, _ = w.Write([]byte(`{"error":{"code":"INVALID_PAYLOAD","message":"nope"}}`))
+		_, _ = w.Write([]byte(body))
 		return
 	}
 	req, err := encode.Unmarshal(body)
@@ -91,19 +99,29 @@ func (f *fakeAPI) handle(w http.ResponseWriter, r *http.Request) {
 	f.batches = append(f.batches, received{req, series})
 	resend := f.resend
 	f.resend = false
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	resp := map[string]any{
 		"accepted_samples": 1,
 		"duplicate":        false,
 		"resend_host_info": resend,
 		"config":           json.RawMessage(f.config),
 		"next_ingest_in":   60,
-	})
+	}
+	for k, v := range f.extra {
+		resp[k] = v
+	}
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (f *fakeAPI) snapshot() []received {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]received(nil), f.batches...)
+}
+
+func (f *fakeAPI) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.requests
 }
 
 func (f *fakeAPI) set(fn func(*fakeAPI)) {

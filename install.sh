@@ -11,16 +11,25 @@
 #   --binary PATH       install a local binary instead of downloading
 #   --import-legacy     reuse the v1 agent's (spectated) host token instead of registering
 #   --upgrade           only replace the binary and restart the service
+#   --auto-update       also install a daily timer that runs `spectate-agent update --if-newer`
 #
 # Creates the unprivileged `spectate-agent` user, installs the binary to
 # /usr/local/bin, writes /etc/spectate-agent/agent.env, registers the host and
 # enables the hardened systemd unit. State lives in /var/lib/spectate-agent.
+#
+# Downloads are verified against the release's checksums.txt. The release
+# assets' copy of this script also verifies the ed25519 signature of
+# checksums.txt (checksums.txt.sig) when OpenSSL 3 is available;
+# `spectate-agent update` always verifies it.
 set -eu
 
 REPO="spectate/agent"
 # Set to the release version in the install.sh asset of each GitHub release;
 # empty in the repository, which installs the newest v2 release.
 DEFAULT_VERSION=""
+# Release signing public key (base64 ed25519), set in the install.sh asset of
+# each GitHub release; empty in the repository (checksums only).
+UPDATE_PUBLIC_KEY=""
 BIN="/usr/local/bin/spectate-agent"
 USER_NAME="spectate-agent"
 ETC_DIR="/etc/spectate-agent"
@@ -32,6 +41,7 @@ VERSION="${DEFAULT_VERSION:-latest}"
 LOCAL_BINARY=""
 IMPORT_LEGACY=0
 UPGRADE=0
+AUTO_UPDATE=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -41,12 +51,43 @@ while [ $# -gt 0 ]; do
     --binary) LOCAL_BINARY="$2"; shift 2 ;;
     --import-legacy) IMPORT_LEGACY=1; shift ;;
     --upgrade) UPGRADE=1; shift ;;
-    -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
+    --auto-update) AUTO_UPDATE=1; shift ;;
+    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
 
 fail() { echo "error: $*" >&2; exit 1; }
+
+# ed25519 verification needs OpenSSL 3 (`pkeyutl -rawin`); LibreSSL and
+# OpenSSL 1.1 cannot do it.
+have_openssl3() {
+  command -v openssl >/dev/null 2>&1 || return 1
+  case "$(openssl version 2>/dev/null)" in
+    "OpenSSL 3."* | "OpenSSL 4."*) return 0 ;;
+  esac
+  return 1
+}
+
+# verify_signature DIR BASE_URL: checks DIR/checksums.txt against the
+# release's checksums.txt.sig with UPDATE_PUBLIC_KEY.
+verify_signature() {
+  [ -n "$UPDATE_PUBLIC_KEY" ] || return 0
+  if ! have_openssl3; then
+    echo "warning: OpenSSL 3 not found: verifying checksums only, not the release signature" >&2
+    return 0
+  fi
+  curl -fsSL "$2/checksums.txt.sig" -o "$1/checksums.txt.sig" \
+    || fail "the release has no checksums.txt.sig (unsigned release?)"
+  # SubjectPublicKeyInfo of a raw ed25519 key: a fixed 12-byte DER prefix.
+  printf '%s\n' '-----BEGIN PUBLIC KEY-----' "MCowBQYDK2VwAyEA$UPDATE_PUBLIC_KEY" '-----END PUBLIC KEY-----' > "$1/release.pem"
+  tr -d ' \r\n' < "$1/checksums.txt.sig" | openssl base64 -d -A > "$1/checksums.sig.bin" \
+    || fail "malformed checksums.txt.sig"
+  openssl pkeyutl -verify -pubin -inkey "$1/release.pem" -rawin \
+    -in "$1/checksums.txt" -sigfile "$1/checksums.sig.bin" >/dev/null 2>&1 \
+    || fail "signature verification of checksums.txt failed"
+  echo "Verified the release signature."
+}
 
 [ "$(id -u)" -eq 0 ] || fail "please run as root (sudo)"
 [ "$(uname -s)" = "Linux" ] || fail "this installer supports Linux; on macOS run \`spectate-agent install\` as your user"
@@ -83,6 +124,7 @@ else
   echo "Downloading spectate-agent $VERSION (linux/$ARCH)..."
   curl -fsSL "$BASE/spectate-agent_linux_$ARCH" -o "$TMP/spectate-agent"
   curl -fsSL "$BASE/checksums.txt" -o "$TMP/checksums.txt"
+  verify_signature "$TMP" "$BASE"
   (cd "$TMP" && grep " spectate-agent_linux_$ARCH\$" checksums.txt | sed "s/spectate-agent_linux_$ARCH/spectate-agent/" | sha256sum -c -) \
     || fail "checksum verification failed"
 fi
@@ -90,6 +132,9 @@ install -m 0755 "$TMP/spectate-agent" "$BIN"
 echo "Installed $("$BIN" version)"
 
 if [ "$UPGRADE" -eq 1 ]; then
+  if [ "$AUTO_UPDATE" -eq 1 ]; then
+    "$BIN" install --user "$USER_NAME" --env-file "$ETC_DIR/agent.env" --auto-update
+  fi
   systemctl restart spectate-agent
   echo "Upgraded and restarted spectate-agent."
   exit 0
@@ -136,7 +181,11 @@ else
   SPECTATE_INSTALL_TOKEN="$TOKEN" as_agent "$BIN" register --api-url "$API_URL"
 fi
 
-# 5. Service
-"$BIN" install --user "$USER_NAME" --env-file "$ETC_DIR/agent.env"
+# 5. Service (and the optional daily update timer)
+if [ "$AUTO_UPDATE" -eq 1 ]; then
+  "$BIN" install --user "$USER_NAME" --env-file "$ETC_DIR/agent.env" --auto-update
+else
+  "$BIN" install --user "$USER_NAME" --env-file "$ETC_DIR/agent.env"
+fi
 echo
 echo "Done. Logs: journalctl -u spectate-agent -f   Status: sudo -u $USER_NAME SPECTATE_STATE_DIR=$STATE_DIR $BIN status"

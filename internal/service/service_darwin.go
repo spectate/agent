@@ -69,3 +69,23 @@ func Uninstall() error {
 	}
 	return nil
 }
+
+// Installed reports whether the launchd agent is installed.
+func Installed() bool {
+	path, err := plistPath()
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(path)
+	return err == nil
+}
+
+// Restart is not automated on macOS: the launchd agent belongs to a user
+// session. RestartHint says how.
+func Restart(bool) error { return errors.New("restart the launchd agent manually") }
+
+// RestartHint returns the commands that restart the launchd agent.
+func RestartHint() string {
+	path, _ := plistPath()
+	return fmt.Sprintf("launchctl unload %s && launchctl load -w %s", path, path)
+}

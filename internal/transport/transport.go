@@ -21,6 +21,9 @@ const (
 	registerPath = "/agent-api/v2/register"
 	ingestPath   = "/agent-api/v2/ingest"
 	maxResponse  = 1 << 20
+
+	// AgentTimeHeader carries the agent's clock (unix ms) at send time.
+	AgentTimeHeader = "X-Agent-Time"
 )
 
 // Client is an HTTP client for one API base URL.
@@ -67,11 +70,20 @@ func (e *Error) Error() string {
 type Disposition int
 
 const (
-	// Retry later (network error, 5xx, 408, 429, auth problems).
+	// Retry later (network error, 5xx, 403, 408, 429).
 	Retry Disposition = iota
 	// Drop: the server will never accept this batch (400, 413, 422).
 	Drop
+	// Unauthorized: the host token is invalid or revoked (401). Keep the
+	// batch, but retry rarely: only a human can fix this.
+	Unauthorized
+	// HostDeleted: the host was removed from Spectate (410 HOST_DELETED).
+	// Nothing will ever be accepted again; stop shipping.
+	HostDeleted
 )
+
+// CodeHostDeleted is the error code of a 410 for a deleted host.
+const CodeHostDeleted = "HOST_DELETED"
 
 // Classify maps an ingest error to a disposition.
 func Classify(err error) Disposition {
@@ -80,6 +92,12 @@ func Classify(err error) Disposition {
 		switch apiErr.Status {
 		case http.StatusBadRequest, http.StatusRequestEntityTooLarge, http.StatusUnprocessableEntity:
 			return Drop
+		case http.StatusUnauthorized:
+			return Unauthorized
+		case http.StatusGone:
+			if apiErr.Code == CodeHostDeleted {
+				return HostDeleted
+			}
 		}
 	}
 	return Retry
@@ -110,6 +128,8 @@ type RegisterResponse struct {
 	HostToken    string        `json:"host_token"`
 	Config       config.Remote `json:"config"`
 	NextIngestIn int           `json:"next_ingest_in"`
+	// ClockOffsetMs is server time minus the request's X-Agent-Time.
+	ClockOffsetMs int64 `json:"clock_offset_ms"`
 }
 
 // IngestResponse is returned by ingest.
@@ -119,6 +139,17 @@ type IngestResponse struct {
 	ResendHostInfo  bool          `json:"resend_host_info"`
 	Config          config.Remote `json:"config"`
 	NextIngestIn    int           `json:"next_ingest_in"`
+	// ClockOffsetMs is server time minus the request's X-Agent-Time. The
+	// server corrects sample timestamps itself; the agent only warns.
+	ClockOffsetMs int64 `json:"clock_offset_ms"`
+	// AgentUpdate announces a newer agent release (nil when current).
+	AgentUpdate *AgentUpdate `json:"agent_update"`
+}
+
+// AgentUpdate is the newest agent release the server knows of.
+type AgentUpdate struct {
+	LatestVersion string `json:"latest_version"`
+	ReleaseURL    string `json:"release_url"`
 }
 
 // Register exchanges an install token for a host token.
@@ -160,6 +191,9 @@ func (c *Client) Ingest(ctx context.Context, gzBody []byte) (*IngestResponse, er
 func (c *Client) do(req *http.Request, out any) error {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", version.UserAgent())
+	// The send time, not the batch time: the server derives the host's clock
+	// offset from it (returned as clock_offset_ms).
+	req.Header.Set(AgentTimeHeader, strconv.FormatInt(time.Now().UnixMilli(), 10))
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {

@@ -111,3 +111,20 @@ func TestInterruptedWritesAreCleanedUp(t *testing.T) {
 		t.Fatal("tmp file should be removed")
 	}
 }
+
+func TestClearRemovesEverything(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := Open(dir, 1<<20, time.Hour)
+	for i := range 3 {
+		_ = s.Push([]byte("x"), time.Now().Add(time.Duration(i)*time.Second))
+	}
+	if n, err := s.Clear(); err != nil || n != 3 || s.Len() != 0 || s.Bytes() != 0 {
+		t.Fatalf("clear = %d, %v (len %d)", n, err, s.Len())
+	}
+	if items, _ := os.ReadDir(dir); len(items) != 0 {
+		t.Fatalf("files left: %v", items)
+	}
+	if s2, _ := Open(dir, 1<<20, time.Hour); s2.Len() != 0 {
+		t.Fatal("cleared spool reappeared on reopen")
+	}
+}

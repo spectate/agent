@@ -3,7 +3,10 @@ package collector
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/cpu"
@@ -124,13 +127,32 @@ func (Uptime) Collect(ctx context.Context, _ time.Time, emit Emit) error {
 	return nil
 }
 
+// DefaultUsageTimeout bounds one mountpoint's statfs call.
+const DefaultUsageTimeout = 2 * time.Second
+
 // Disk reports usage per mounted filesystem.
+//
+// statfs on a hung mount (dead NFS server, stuck FUSE daemon) blocks in the
+// kernel and cannot be interrupted, so each mountpoint is queried in its own
+// goroutine with its own deadline. A mountpoint whose call is still hanging
+// is skipped (not queried again) until that call returns, so one dead mount
+// neither hides the other disks nor piles up goroutines.
 type Disk struct {
+	// UsageTimeout bounds each mountpoint's usage call (default 2s).
+	UsageTimeout time.Duration
+
 	mu                 sync.RWMutex
 	includeMountpoints []string
 	excludeMountpoints []string
 	excludeDevices     []string
 	excludeFilesystems []string
+
+	// Test seams (default gopsutil).
+	partitions func(ctx context.Context, all bool) ([]disk.PartitionStat, error)
+	usage      func(ctx context.Context, path string) (*disk.UsageStat, error)
+
+	hungMu sync.Mutex
+	hung   map[string]time.Time // mountpoint -> start of the call still running
 }
 
 func (*Disk) Name() string { return "disk" }
@@ -157,7 +179,11 @@ func (d *Disk) Excluded(p disk.PartitionStat) bool {
 }
 
 func (d *Disk) Collect(ctx context.Context, _ time.Time, emit Emit) error {
-	parts, err := disk.PartitionsWithContext(ctx, false)
+	partitions := d.partitions
+	if partitions == nil {
+		partitions = disk.PartitionsWithContext
+	}
+	parts, err := partitions(ctx, false)
 	if err != nil && len(parts) == 0 {
 		return err
 	}
@@ -167,8 +193,11 @@ func (d *Disk) Collect(ctx context.Context, _ time.Time, emit Emit) error {
 			continue
 		}
 		seen[p.Mountpoint] = true
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 
-		u, err := disk.UsageWithContext(ctx, p.Mountpoint)
+		u, err := d.usageOf(ctx, p.Mountpoint)
 		if err != nil || u.Total == 0 {
 			continue
 		}
@@ -183,6 +212,81 @@ func (d *Disk) Collect(ctx context.Context, _ time.Time, emit Emit) error {
 		emit("system.disk_usage.inodes_used_percent", labels, round(u.InodesUsedPercent))
 	}
 	return nil
+}
+
+// Hung returns the mountpoints whose usage call has not returned yet.
+func (d *Disk) Hung() []string {
+	d.hungMu.Lock()
+	defer d.hungMu.Unlock()
+	out := make([]string, 0, len(d.hung))
+	for mp := range d.hung {
+		out = append(out, mp)
+	}
+	sort.Strings(out)
+	return out
+}
+
+var errMountHung = errors.New("usage call still hanging")
+
+// usageOf runs one usage call with its own deadline. On timeout the call is
+// left running (it cannot be cancelled) and the mountpoint is skipped until
+// it returns.
+func (d *Disk) usageOf(ctx context.Context, mountpoint string) (*disk.UsageStat, error) {
+	d.hungMu.Lock()
+	if _, ok := d.hung[mountpoint]; ok {
+		d.hungMu.Unlock()
+		return nil, errMountHung
+	}
+	if d.hung == nil {
+		d.hung = make(map[string]time.Time)
+	}
+	start := time.Now()
+	d.hung[mountpoint] = start // cleared below unless the call hangs
+	d.hungMu.Unlock()
+
+	usage := d.usage
+	if usage == nil {
+		usage = disk.UsageWithContext
+	}
+	timeout := d.UsageTimeout
+	if timeout <= 0 {
+		timeout = DefaultUsageTimeout
+	}
+	cctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	type result struct {
+		u   *disk.UsageStat
+		err error
+	}
+	done := make(chan result, 1)
+	var timedOut atomic.Bool
+	go func() {
+		u, err := usage(cctx, mountpoint)
+		d.hungMu.Lock()
+		delete(d.hung, mountpoint)
+		d.hungMu.Unlock()
+		if timedOut.Load() {
+			slog.Info("disk usage call returned, collecting the mountpoint again",
+				"mountpoint", mountpoint, "after", time.Since(start).Round(time.Millisecond))
+		}
+		done <- result{u, err}
+	}()
+
+	select {
+	case r := <-done:
+		return r.u, r.err
+	case <-cctx.Done():
+		timedOut.Store(true)
+		select {
+		case r := <-done: // returned at the deadline
+			return r.u, r.err
+		default:
+		}
+		slog.Warn("disk usage call hangs (stuck mount?); skipping the mountpoint until it returns",
+			"mountpoint", mountpoint, "timeout", timeout)
+		return nil, errMountHung
+	}
 }
 
 // Net reports per-interface traffic since the previous round, normalised to
