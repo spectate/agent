@@ -1,0 +1,14 @@
+{
+  "cpu_idle": [
+    71.234,
+    68.5,
+    65.125,
+    60
+  ],
+  "disk_labels": [
+    "/",
+    "/dev/nvme0n1p1",
+    "ext4"
+  ],
+  "hostname": "golden-01"
+}
