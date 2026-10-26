@@ -105,8 +105,9 @@ case "$(uname -s)" in
     [ "$AUTO_UPDATE" -eq 0 ] || fail "--auto-update needs systemd; on macOS update with: sudo spectate-agent update"
     # The agent runs as a launchd agent of the user who ran sudo, not as root
     RUN_USER="${SUDO_USER:-}"
-    [ -n "$RUN_USER" ] && [ "$RUN_USER" != "root" ] \
-      || fail "on macOS, run the installer with sudo from the account the agent should run as"
+    if [ -z "$RUN_USER" ] || [ "$RUN_USER" = "root" ]; then
+      fail "on macOS, run the installer with sudo from the account the agent should run as"
+    fi
     RUN_UID="$(id -u "$RUN_USER")"
     RUN_HOME="$(dscl . -read "/Users/$RUN_USER" NFSHomeDirectory 2>/dev/null | sed 's/^NFSHomeDirectory: *//')"
     [ -n "$RUN_HOME" ] || RUN_HOME="$(eval echo "~$RUN_USER")"
@@ -189,7 +190,9 @@ if [ "$OS" = "darwin" ]; then
   fi
 
   # Reinstalling replaces the launchd agent: unload the old one first
-  [ -f "$PLIST" ] && as_user launchctl unload "$PLIST" 2>/dev/null || true
+  if [ -f "$PLIST" ]; then
+    as_user launchctl unload "$PLIST" 2>/dev/null || true
+  fi
   as_user "$BIN" install
   echo
   echo "Done. Logs: tail -f ~/Library/Logs/spectate-agent.log   Status: spectate-agent status"
