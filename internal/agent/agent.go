@@ -103,6 +103,7 @@ type Runner struct {
 	collMu    sync.Mutex
 	running   map[string]time.Time // collector name -> start of a run that has not returned
 	reportedS map[string]bool      // running collectors already reported as stuck
+	lastRun   map[string]time.Time // periodic collector name -> round it last ran in
 
 	mu           sync.Mutex
 	remote       config.Remote
@@ -125,7 +126,7 @@ func New(opts Options) *Runner {
 		opts.Logger = slog.Default()
 	}
 	if opts.Collectors == nil {
-		opts.Collectors = collector.System()
+		opts.Collectors = collector.System(opts.StateDir)
 	}
 	if opts.HostInfo == nil {
 		opts.HostInfo = collector.HostInfo
@@ -158,6 +159,7 @@ func New(opts Options) *Runner {
 		state:      opts.State,
 		running:    make(map[string]time.Time),
 		reportedS:  make(map[string]bool),
+		lastRun:    make(map[string]time.Time),
 	}
 	r.applyRemote(opts.State.Remote.Normalize(), 0, false)
 	return r
@@ -248,7 +250,7 @@ func (r *Runner) collectRound(ctx context.Context, at time.Time) {
 	started := 0
 	for i, c := range r.opts.Collectors {
 		name := c.Name()
-		if !remote.Enabled(name) || !r.startCollector(name) {
+		if !remote.Enabled(name) || !r.due(c, at, remote) || !r.startCollector(name) {
 			continue
 		}
 		buf := &roundBuffer{}
@@ -281,6 +283,25 @@ wait:
 		}
 	}
 	r.reportStuck(timeout)
+}
+
+// due reports whether a periodic collector should run in the round at `at`:
+// once its interval has passed since its last round (minus half a round, so
+// it stays aligned with the rounds). Other collectors run every round.
+func (r *Runner) due(c collector.Collector, at time.Time, remote config.Remote) bool {
+	p, ok := c.(collector.Periodic)
+	if !ok {
+		return true
+	}
+	every := time.Duration(p.IntervalSeconds())*r.opts.IntervalUnit -
+		time.Duration(remote.CollectionInterval)*r.opts.IntervalUnit/2
+	r.collMu.Lock()
+	defer r.collMu.Unlock()
+	if last, ran := r.lastRun[c.Name()]; ran && at.Sub(last) < every {
+		return false
+	}
+	r.lastRun[c.Name()] = at
+	return true
 }
 
 // startCollector claims a collector for this round; false while a previous

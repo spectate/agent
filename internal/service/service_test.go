@@ -40,3 +40,24 @@ func TestUpdateUnits(t *testing.T) {
 		}
 	}
 }
+
+func TestPackagesUnitsRunUnprivilegedWithRoomForThePackageManager(t *testing.T) {
+	svc, timer, err := PackagesUnits(Options{Binary: "/usr/local/bin/spectate-agent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"Type=oneshot", "ExecStart=/usr/local/bin/spectate-agent check-updates", "User=spectate-agent",
+		"StateDirectory=spectate-agent\n", "CacheDirectory=spectate-agent-packages\n", "MemoryMax=512M",
+		"ProtectSystem=strict", "NoNewPrivileges=yes", "CapabilityBoundingSet=\n",
+	} {
+		if !strings.Contains(svc, want) {
+			t.Errorf("package check unit missing %q", want)
+		}
+	}
+	for _, want := range []string{"OnUnitActiveSec=1h", "RandomizedDelaySec=15min", "WantedBy=timers.target"} {
+		if !strings.Contains(timer, want) {
+			t.Errorf("timer missing %q", want)
+		}
+	}
+}

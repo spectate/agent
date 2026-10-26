@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	github.com/shirou/gopsutil/v4 v4.26.9
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20261020153306-9f2b28d4331a
+	golang.org/x/sys v0.48.0
 	google.golang.org/protobuf v1.36.12
 )
 
@@ -16,5 +17,4 @@ require (
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	golang.org/x/sys v0.48.0 // indirect
 )

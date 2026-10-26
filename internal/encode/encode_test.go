@@ -221,6 +221,30 @@ func typicalMinute() []*metrics.Series {
 				add("system.net."+k, []float64{812.375 + r*17, 3391.5 + r*17, 1204 + r*17, 2877 + r*17, 0, 0, 0, 0, 0, 0}[i], l)
 			}
 		}
+		// v2.1 collectors: disk I/O, pressure, OOM kills, sockets, file handles
+		for _, dev := range []string{"nvme0n1", "nvme1n1"} {
+			l := metrics.Label{Key: "device", Value: dev}
+			for i, k := range []string{"read_bytes", "write_bytes", "reads", "writes", "busy_percent", "await_ms"} {
+				add("system.io."+k, []float64{48_311.467 + r*1000, 1_310_720 + r*2048, 3.267 + r, 41.533 + r, 2.4 + r*0.1, 0.415}[i], l)
+			}
+		}
+		for i, k := range []string{"cpu.some", "memory.some", "memory.full", "io.some", "io.full"} {
+			add("system.pressure."+k, []float64{1.234 + r*0.1, 0, 0, 0.412, 0.103}[i])
+		}
+		add("system.oom.kills", 0)
+		for i, k := range []string{"established", "time_wait", "orphaned", "inuse"} {
+			add("system.net.tcp."+k, []float64{142 + r, 37, 0, 181 + r}[i])
+		}
+		add("system.files.used", 4128+r*3)
+		add("system.files.max", 9_223_372_036_854_775_807)
+		if round == 0 { // once a minute
+			add("system.services.failed", 0)
+			add("system.updates.pending", 12)
+			add("system.updates.security", 3)
+			add("system.updates.checked_age", 2400)
+			add("system.reboot.required", 0)
+			add("system.clock.synced", 1)
+		}
 	}
 	return acc.Drain()
 }

@@ -37,6 +37,9 @@ type Remote struct {
 		IncludeInterfaces []string `json:"include_interfaces"`
 		ExcludeInterfaces []string `json:"exclude_interfaces"`
 	} `json:"net"`
+	DiskIO struct {
+		ExcludeDevices []string `json:"exclude_devices"`
+	} `json:"diskio"`
 }
 
 // DefaultRemote returns the built-in remote config.
@@ -44,7 +47,10 @@ func DefaultRemote() Remote {
 	var r Remote
 	r.CollectionInterval = 15
 	r.IngestInterval = 60
-	r.Collectors = []string{"cpu", "memory", "load", "disk", "net", "uptime", "agent"}
+	r.Collectors = []string{
+		"cpu", "memory", "load", "disk", "net", "uptime", "agent",
+		"diskio", "pressure", "services", "updates", "sockets", "clock",
+	}
 	// Network and automount filesystems: statfs on a dead server blocks
 	// (uninterruptibly), and their usage belongs to the server that exports
 	// them. On Linux gopsutil already skips "nodev" filesystems, which covers
@@ -56,6 +62,10 @@ func DefaultRemote() Remote {
 	}
 	r.Net.IncludeInterfaces = []string{"en0", "eth0", "lo0"}
 	r.Net.ExcludeInterfaces = []string{"lo", "br*", "bridge*", "docker*", "veth*", "virbr*", "cni*", "flannel*", "cali*", "utun*", "llw*", "ap*", "anpi*", "awdl*", "gif*", "stf*"}
+	// Physical disks only: virtual devices (loop, RAM disks, optical drives)
+	// and stacked ones (device mapper/LVM, software RAID), whose I/O is
+	// already counted on the disks underneath.
+	r.DiskIO.ExcludeDevices = []string{"loop*", "ram*", "zram*", "sr*", "fd*", "dm-*", "md*", "nbd*"}
 	return r
 }
 

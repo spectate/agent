@@ -390,3 +390,29 @@ func (e *emitter) Collect(_ context.Context, _ time.Time, emit collector.Emit) e
 	emit("test."+e.name, []metrics.Label{{Key: "k", Value: e.name}}, 1)
 	return nil
 }
+
+type periodic struct {
+	runs atomic.Int64
+}
+
+func (*periodic) Name() string { return "services" }
+
+func (*periodic) IntervalSeconds() int { return 60 }
+
+func (p *periodic) Collect(_ context.Context, _ time.Time, emit collector.Emit) error {
+	p.runs.Add(1)
+	emit("system.services.failed", nil, 0)
+	return nil
+}
+
+func TestPeriodicCollectorRunsOncePerInterval(t *testing.T) {
+	c := &periodic{}
+	r := newRunner(t, newFakeAPI(t), nil, c) // "15s" rounds = 15ms, interval "60s" = 60ms
+	t0 := time.Now().Truncate(time.Second)
+	for i := range 9 { // rounds at 0..120 "s"
+		r.collectRound(context.Background(), t0.Add(time.Duration(i)*15*time.Millisecond))
+	}
+	if got := c.runs.Load(); got != 3 {
+		t.Fatalf("ran %d times over 120s, want 3 (at 0, 60 and 120s)", got)
+	}
+}

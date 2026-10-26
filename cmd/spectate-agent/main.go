@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
@@ -38,10 +39,13 @@ Usage:
   spectate-agent register --token <install token> [--api-url URL] [--force]
   spectate-agent import-legacy [--config /etc/spectated/config.yaml] [--api-url URL]
   spectate-agent run
-  spectate-agent install [--user spectate-agent] [--auto-update]   (root; systemd / launchd)
+  spectate-agent install [--user spectate-agent] [--auto-update] [--refresh-units]   (root; systemd / launchd)
   spectate-agent uninstall
   spectate-agent update [--version X] [--check] [--if-newer]      (root)
-  spectate-agent status
+  spectate-agent status [--json]
+  spectate-agent doctor                 check registration, API, clock, service and collectors
+  spectate-agent collect --once [--json]   print what the collectors report on this host (nothing is sent)
+  spectate-agent config show            print the server-driven config
   spectate-agent version
 
 Environment:
@@ -81,7 +85,15 @@ func main() {
 	case "update":
 		err = selfUpdate(args)
 	case "status":
-		err = status(settings)
+		err = status(settings, args)
+	case "doctor":
+		err = doctor(settings)
+	case "collect":
+		err = collectCmd(settings, args)
+	case "config":
+		err = configCmd(settings, args)
+	case "check-updates": // hidden: run hourly by spectate-agent-packages.timer
+		err = checkUpdates(settings)
 	case "version", "--version", "-v":
 		fmt.Printf("spectate-agent %s (commit %s, built %s)\n", version.Version, version.Commit, version.BuildDate)
 	case "help", "--help", "-h":
@@ -222,6 +234,8 @@ func install(args []string) error {
 	user := fs.String("user", service.Name, "service user (Linux)")
 	envFile := fs.String("env-file", "/etc/spectate-agent/agent.env", "EnvironmentFile for the unit (Linux)")
 	autoUpdate := fs.Bool("auto-update", false, "also install a daily timer that runs `update --if-newer` (Linux)")
+	noPackageCheck := fs.Bool("no-package-check", false, "do not install the hourly package update check (Linux)")
+	refresh := fs.Bool("refresh-units", false, "rewrite the units of an installed agent with this version's (after an update)")
 	_ = fs.Parse(args)
 
 	bin, err := os.Executable()
@@ -231,40 +245,22 @@ func install(args []string) error {
 	if bin, err = filepath.EvalSymlinks(bin); err != nil {
 		return err
 	}
+	if *refresh {
+		return service.RefreshUnits(bin)
+	}
 	if *autoUpdate && runtime.GOOS != "linux" {
 		return errors.New("--auto-update is only supported on Linux (systemd)")
 	}
-	if err := service.Install(service.Options{Binary: bin, User: *user, EnvFile: *envFile, AutoUpdate: *autoUpdate}); err != nil {
+	packages := !*noPackageCheck && service.HasPackageManager()
+	if err := service.Install(service.Options{Binary: bin, User: *user, EnvFile: *envFile, AutoUpdate: *autoUpdate, Packages: packages}); err != nil {
 		return err
 	}
 	fmt.Println("spectate-agent service installed and started.")
 	if *autoUpdate {
 		fmt.Printf("Automatic updates enabled (%s.timer, daily).\n", service.UpdateName)
 	}
-	return nil
-}
-
-func status(settings config.Settings) error {
-	st, err := config.LoadState(settings.StateDir)
-	if err != nil {
-		return err
-	}
-	sp, err := spool.Open(filepath.Join(settings.StateDir, "spool"), settings.SpoolMaxBytes, settings.SpoolMaxAge)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("version:      %s\n", version.Version)
-	fmt.Printf("api:          %s\n", apiURL(settings, "", st.APIURL))
-	fmt.Printf("host uuid:    %s\n", st.HostUUID)
-	fmt.Printf("state dir:    %s\n", settings.StateDir)
-	fmt.Printf("collection:   every %ds, shipped every %ds\n", st.Remote.CollectionInterval, st.Remote.IngestInterval)
-	fmt.Printf("collectors:   %s\n", strings.Join(st.Remote.Collectors, ", "))
-	fmt.Printf("spool:        %d batches, %d bytes\n", sp.Len(), sp.Bytes())
-	if st.AvailableUpdate != nil && version.Compare(st.AvailableUpdate.Version, version.Version) > 0 {
-		fmt.Printf("update:       %s available: sudo spectate-agent update\n", st.AvailableUpdate.Version)
-	}
-	if st.HostDeleted {
-		fmt.Println("host:         removed from Spectate; the agent no longer runs. Remove it: sudo spectate-agent uninstall")
+	if packages {
+		fmt.Printf("Pending package updates are checked hourly (%s.timer).\n", service.PackagesName)
 	}
 	return nil
 }
@@ -360,6 +356,16 @@ func selfUpdate(args []string) error {
 		fmt.Printf("Installed spectate-agent %s at %s (signature and checksum verified).\n", target, bin)
 	} else {
 		fmt.Printf("Installed spectate-agent %s at %s (checksum verified, signature NOT verified).\n", target, bin)
+	}
+
+	// The new version may ship new or changed units (e.g. the package check):
+	// let it write them before the agent restarts.
+	if runtime.GOOS == "linux" && service.Installed() {
+		cmd := exec.Command(bin, "install", "--refresh-units")
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: refreshing the systemd units failed (%v); run: sudo spectate-agent install --refresh-units\n", err)
+		}
 	}
 
 	switch {

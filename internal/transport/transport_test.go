@@ -145,3 +145,21 @@ func TestAgentTimeHeaderAndClockOffset(t *testing.T) {
 		t.Fatalf("plain = %+v, %v", plain, err)
 	}
 }
+
+func TestCheckSendsTheTokenAndAgentTime(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/agent-api/v2/check" {
+			t.Errorf("%s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer hst_x" || r.Header.Get(AgentTimeHeader) == "" {
+			t.Errorf("headers: %v", r.Header)
+		}
+		_, _ = w.Write([]byte(`{"host_uuid":"h-1","label":"web-01","clock_offset_ms":-1200}`))
+	}))
+	defer srv.Close()
+
+	resp, err := New(srv.URL, "hst_x").Check(context.Background())
+	if err != nil || resp.HostUUID != "h-1" || resp.Label != "web-01" || resp.ClockOffsetMs != -1200 {
+		t.Fatalf("got %+v, %v", resp, err)
+	}
+}

@@ -20,3 +20,9 @@ func Restart(bool) error { return errors.New("service restart is only supported 
 
 // RestartHint says how to restart the agent here.
 func RestartHint() string { return "restart spectate-agent under your init system" }
+
+// HasPackageManager reports whether the package update check can run (Linux only).
+func HasPackageManager() bool { return false }
+
+// RefreshUnits rewrites systemd units; there are none here.
+func RefreshUnits(string) error { return nil }
