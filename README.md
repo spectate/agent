@@ -45,15 +45,18 @@ The agent registers with
   `agent.batches.dropped`, `agent.samples.dropped`, `agent.send.failures`,
   `agent.send.latency_ms`, `agent.memory.heap_mb` and `agent.memory.sys_mb`.
 
-Linux (amd64/arm64) is the primary target. macOS is best effort (launchd user agent).
+Linux (amd64/arm64) is the primary target. macOS (Apple silicon and Intel) is
+best effort: the agent runs as a launchd agent of the user who installs it.
 
-## Install (Linux)
+## Install
+
+The same command on Linux and macOS:
 
 ```sh
 curl -fsSL https://get.spectate.net/agent.sh | sudo sh -s -- --token <install token>
 ```
 
-`install.sh` does the following:
+On Linux, `install.sh` does the following:
 
 1. Downloads the release binary from this repository's GitHub releases and
    verifies it against the release's `checksums.txt`.
@@ -62,13 +65,21 @@ curl -fsSL https://get.spectate.net/agent.sh | sudo sh -s -- --token <install to
 4. Registers the host, which stores its state in `/var/lib/spectate-agent/state.json` (mode 0600).
 5. Installs and starts `spectate-agent.service`.
 
+On macOS, run it with `sudo` from the account the agent should run as. Only
+step 1 runs as root (the binary goes to `/usr/local/bin`). The host is then
+registered as that user, with state in `~/Library/Application Support/spectate-agent`,
+and `spectate-agent install` loads a launchd agent
+(`~/Library/LaunchAgents/net.spectate.agent.plist`, log in
+`~/Library/Logs/spectate-agent.log`) that starts at login. On macOS the
+checksums are verified with `shasum`.
+
 Other modes:
 
 | Flag | Purpose |
 |------|---------|
-| `--import-legacy` | Moves from the v1 agent: reuses the host token from `/etc/spectated/config.yaml` (same host, same history) and uninstalls `spectated` |
-| `--upgrade` | Replaces the binary and restarts the service |
-| `--auto-update` | Also installs a daily timer that runs `spectate-agent update --if-newer` (see [Updating](#updating)) |
+| `--import-legacy` | Moves from the v1 agent: reuses the host token from `/etc/spectated/config.yaml` (`~/.spectated/config.yaml` on macOS; same host, same history) and uninstalls `spectated` |
+| `--upgrade` | Replaces the binary and restarts the service (on macOS: `launchctl kickstart`) |
+| `--auto-update` | Also installs a daily timer that runs `spectate-agent update --if-newer` (Linux only; see [Updating](#updating)) |
 | `--binary ./spectate-agent` | Installs a locally built binary |
 | `--api-url URL` | Uses a non-production API |
 | `--version 2.0.1` | Installs a specific release |
@@ -79,7 +90,9 @@ default version; the copy in this repository installs the latest release.
 therefore always the newest installer.
 
 To remove the agent: `sudo spectate-agent uninstall` (also removes the update
-timer). State in `/var/lib/spectate-agent` is kept.
+timer). State in `/var/lib/spectate-agent` is kept. On macOS, run
+`spectate-agent uninstall` as the user (without sudo), then
+`sudo rm /usr/local/bin/spectate-agent`.
 
 The installer verifies the binary against the release's `checksums.txt`. The
 copy of `install.sh` published with each release also carries the release
