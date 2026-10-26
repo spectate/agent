@@ -1,5 +1,5 @@
 # Publishes a GitHub release for every v2.x.y tag (git tag -s v2.0.0 && git push origin v2.0.0).
-# Releases are not marked "latest": that stays on v1 (spectated) for its installers.
+# Stable releases become "latest"; v2.x.y-rc.N tags are pre-releases.
 name: Release
 
 on:

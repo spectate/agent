@@ -74,10 +74,8 @@ release:
   github:
     owner: spectate
     name: agent
-  # v1 (spectated) installers download releases/latest/download/spectated_*,
-  # so v1.5.0 must stay the "latest" release until v1 is retired. install.sh
-  # finds the newest v2 release itself.
-  make_latest: false
+  # Stable v2 releases become "latest" (pre-releases never do), so
+  # releases/latest/download/install.sh always installs the newest agent.
   prerelease: auto
   extra_files:
     - glob: build/install.sh

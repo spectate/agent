@@ -110,18 +110,14 @@ if [ -n "$LOCAL_BINARY" ]; then
   cp "$LOCAL_BINARY" "$TMP/spectate-agent"
 else
   if [ "$VERSION" = "latest" ]; then
-    # Not releases/latest: that stays on the v1 agent (spectated) while v1
-    # installs are supported. Releases are listed newest first; pre-releases
-    # (v2.1.0-rc.1) do not match.
-    VERSION="$(curl -fsSL -H 'Accept: application/vnd.github+json' \
-      "https://api.github.com/repos/$REPO/releases?per_page=30" \
-      | grep -o '"tag_name": *"v2\.[0-9][0-9]*\.[0-9][0-9]*"' | head -n 1 | sed 's/.*"v\(.*\)"/\1/')" \
-      || VERSION=""
-    [ -n "$VERSION" ] || fail "could not find the latest release; pass --version (see https://github.com/$REPO/releases)"
+    # The newest stable release (pre-releases are never "latest")
+    BASE="https://github.com/$REPO/releases/latest/download"
+    echo "Downloading the latest spectate-agent (linux/$ARCH)..."
+  else
+    VERSION="${VERSION#v}"
+    BASE="https://github.com/$REPO/releases/download/v$VERSION"
+    echo "Downloading spectate-agent $VERSION (linux/$ARCH)..."
   fi
-  VERSION="${VERSION#v}"
-  BASE="https://github.com/$REPO/releases/download/v$VERSION"
-  echo "Downloading spectate-agent $VERSION (linux/$ARCH)..."
   curl -fsSL "$BASE/spectate-agent_linux_$ARCH" -o "$TMP/spectate-agent"
   curl -fsSL "$BASE/checksums.txt" -o "$TMP/checksums.txt"
   verify_signature "$TMP" "$BASE"

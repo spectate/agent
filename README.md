@@ -1,8 +1,8 @@
 # spectate-agent
 
 The Spectate host monitoring agent, protocol v2. It replaces the v1 agent
-(`spectated`), which keeps working against the frozen `/agent-api/host/*`
-endpoints; see [v1 (spectated)](#v1-spectated). The agent registers with
+(`spectated`), which is no longer supported; see [v1 (spectated)](#v1-spectated).
+The agent registers with
 `POST /agent-api/v2/register` and ships metrics to `POST /agent-api/v2/ingest`
 (gzip + protobuf, schema in [`proto/spectate/agent/v2/ingest.proto`](proto/spectate/agent/v2/ingest.proto)).
 
@@ -74,8 +74,9 @@ Other modes:
 | `--version 2.0.1` | Installs a specific release |
 
 Every release publishes `install.sh` as an asset with that release as its
-default version; the copy in this repository installs the newest `v2.x.y`
-release (found through the GitHub API, because `releases/latest` stays on v1).
+default version; the copy in this repository installs the latest release.
+`https://github.com/spectate/agent/releases/latest/download/install.sh` is
+therefore always the newest installer.
 
 To remove the agent: `sudo spectate-agent uninstall` (also removes the update
 timer). State in `/var/lib/spectate-agent` is kept.
@@ -123,8 +124,8 @@ sudo spectate-agent update           # install the newest v2 release and restart
 sudo spectate-agent update --version 2.1.0   # a specific release (also older or pre-release)
 ```
 
-`update` lists the repository's releases through the GitHub API (not
-`releases/latest`, which stays on v1) and picks the highest stable `v2.x.y`. It
+`update` lists the repository's releases through the GitHub API and picks the
+highest stable `v2.x.y`, so a pre-release or an old tag is never installed. It
 downloads `spectate-agent_linux_<arch>`, `checksums.txt` and
 `checksums.txt.sig`; it verifies the ed25519 signature of `checksums.txt` with
 the public key compiled into the binary, then the binary's sha256. It only
@@ -235,12 +236,12 @@ test suite, which keeps the Go and PHP implementations in lockstep: after
 
 ## v1 (spectated)
 
-The v1 agent is frozen and still runs at customers. Its source is the
-`v1.5.0` tag (and the earlier `v1.x.y` tags), its releases stay as they are,
-and v1.5.0 stays the "latest" release: the v1 installer, `install-latest.sh`
-in this repository, downloads
-`releases/latest/download/spectated_<os>_<arch>.tar.gz`. Keep that file
-unchanged and do not mark a v2 release as latest until v1 is retired.
+The v1 agent is no longer supported. Its source is the `v1.5.0` tag (and the
+earlier `v1.x.y` tags); its releases stay on GitHub. v2 releases are marked
+"latest", so the v1 installer, `install-latest.sh`, stops working with the first
+v2 release: it downloads `releases/latest/download/spectated_<os>_<arch>.tar.gz`.
+It stays in this repository only until the dashboard's add-host command uses
+the v2 installer; then delete it.
 
 Move a v1 host to v2 with `install.sh --import-legacy`: the host keeps its
 token, identity and history.

@@ -141,8 +141,9 @@ func ParsePublicKey(s string) (ed25519.PublicKey, error) {
 	return ed25519.PublicKey(b), nil
 }
 
-// Latest returns the newest stable v2 release. The repository's
-// releases/latest stays on the v1 agent, so releases are listed instead.
+// Latest returns the newest stable v2 release. Releases are listed rather than
+// asking for releases/latest, so only stable v2.x.y tags are ever installed,
+// whatever is marked latest.
 func (c *Client) Latest(ctx context.Context) (*Release, error) {
 	var releases []Release
 	if err := c.getJSON(ctx, c.apiURL+"/repos/"+Repo+"/releases?per_page=30", &releases); err != nil {
