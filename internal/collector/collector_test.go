@@ -122,7 +122,7 @@ func TestDiskFilters(t *testing.T) {
 func TestSystemCollectorsRunOnThisHost(t *testing.T) {
 	ctx := context.Background()
 	emit, got := record()
-	for _, c := range System() {
+	for _, c := range System(t.TempDir()) {
 		if cc, ok := c.(Configurable); ok {
 			cc.Configure(config.DefaultRemote())
 		}

@@ -9,11 +9,13 @@ The agent registers with
 [![License: Apache License 2.0](https://img.shields.io/badge/License-Apache%20License%202.0-yellow.svg)](LICENSE)
 
 - Collects every 15 s (server-configurable) and ships once a minute in one
-  gzip-compressed, columnar protobuf batch. A typical minute (58 series, 232
-  samples) is about 1 KB on the wire.
+  gzip-compressed, columnar protobuf batch. A typical minute (88 series, 334
+  samples) is about 1.4 KB on the wire.
 - Collects the same metrics, with the same keys and units, as v1: CPU, memory and
   swap, load, uptime, disk usage per mountpoint, network per interface. The
-  server stores v1 and v2 data identically.
+  server stores v1 and v2 data identically. On top of those: disk I/O, pressure
+  stall, OOM kills, failed systemd services, pending updates and reboot
+  required, TCP connections, file handles and clock sync (see [Metrics](#metrics)).
 - Keeps working through outages. Batches that fail to send go to a bounded
   on-disk spool (default 50 MB / 24 h) and are replayed oldest first, with
   exponential backoff, jitter and `Retry-After`. The server de-duplicates
@@ -101,20 +103,69 @@ installed (`openssl pkeyutl -rawin`); without it, it warns and relies on the
 checksum. The copy in this repository has no key and checks checksums only.
 `spectate-agent update` always verifies the signature.
 
+## Metrics
+
+Each collector can be switched off per host in Spectate (host → Settings &
+alerts → Collection); the server sends the list with every ingest response. A
+collector with nothing to report on a host (no PSI before Linux 4.20, no
+systemd, macOS) sends nothing rather than zeros.
+
+| Collector | Metrics | Unit | Source |
+|-----------|---------|------|--------|
+| `cpu` | `system.cpu.{user,system,interrupt,iowait,idle,stolen,guest}` | % | gopsutil |
+| `memory` | `system.memory.{total,free,used,available}`, `available_percent`; `system.swap.*` | MB, % | gopsutil |
+| `load` | `system.load.{1,5,15}` | | gopsutil |
+| `uptime` | `system.uptime` | s | gopsutil |
+| `disk` | `system.disk_usage.{total,free,used,used_percent,inodes_*}` (`mountpoint`, `device`, `fstype`) | KB, % | statfs |
+| `net` | `system.net.{bytes,packets}_{sent,recv}`, `{err,drop,fifo}_{in,out}` (`interface`) | per 60 s (bytes in KB) | gopsutil |
+| `diskio` | `system.io.{read_bytes,write_bytes}`, `{reads,writes}`, `busy_percent`, `await_ms` (`device`) | B/s, ops/s, %, ms | `/proc/diskstats` (whole disks; `loop`, `dm-`, `md` … excluded), IOKit on macOS |
+| `pressure` | `system.pressure.{cpu,memory,io}.some`, `{memory,io}.full`; `system.oom.kills` | % of the round stalled; kills in the round | `/proc/pressure/*`, `/proc/vmstat` (Linux) |
+| `services` | `system.services.failed`; `system.service.failed` = 1 (`unit`) | units | `systemctl list-units --state=failed`, every 60 s |
+| `updates` | `system.updates.{pending,security,checked_age}`; `system.reboot.required` (`packages`) | packages, s, 0/1 | the [package check](#pending-updates); `/run/reboot-required` |
+| `sockets` | `system.net.tcp.{established,time_wait,orphaned,inuse}`; `system.files.{used,max}` | sockets, handles | `/proc/net/snmp`, `/proc/net/sockstat`, `/proc/sys/fs/file-nr` (`sysctl` on macOS) |
+| `clock` | `system.clock.synced` | 0/1 | `timedatectl` (`NTPSynchronized`: timesyncd, chrony, ntpd), every 60 s |
+
+Rates added in v2.1 are per second; the v1 network metrics keep their per-60 s
+amounts so existing thresholds keep their meaning.
+
+### Pending updates
+
+Package managers need far more memory than the agent's unit allows (64 MB), so
+pending updates are counted by a separate unit: `spectate-agent-packages.timer`
+runs `spectate-agent check-updates` hourly as the same unprivileged user
+(`MemoryMax=512M`, the same hardening) and writes `updates.json` to the state
+directory, which the agent reads. It never changes the system:
+
+- apt: `apt list --upgradable` on the package lists already on disk (it never
+  runs `apt-get update`); security updates are those from a `-security` suite.
+- dnf/yum: `check-update` and `updateinfo list --security`, with metadata in
+  the unit's own cache (`/var/cache/spectate-agent-packages`), and
+  `needs-restarting -r` for reboot required.
+
+`spectate-agent install` adds the timer where apt, dnf or yum is installed
+(`--no-package-check` leaves it out), and `update` adds it to existing installs.
+
 ## Commands
 
 ```
 spectate-agent register --token <install token> [--api-url URL] [--force]
 spectate-agent import-legacy [--config /etc/spectated/config.yaml]
 spectate-agent run                 # foreground (what the service runs)
-spectate-agent install [--user U] [--auto-update]  # root: systemd unit (Linux) / launchd (macOS)
+spectate-agent install [--user U] [--auto-update] [--no-package-check]  # root: systemd units (Linux) / launchd (macOS)
+spectate-agent install --refresh-units   # root: rewrite the units of an installed agent (update does this)
 spectate-agent uninstall
 spectate-agent update [--version X] [--check] [--if-newer] [--no-restart]  # root
-spectate-agent status              # includes an available update, a deleted host
+spectate-agent status [--json]     # includes an available update, a deleted host
+spectate-agent doctor              # registration, API and token, clock, spool, service, collectors, package check
+spectate-agent collect --once [--json]   # what each collector reports on this host; nothing is sent
+spectate-agent config show         # the server-driven config the agent runs with
 spectate-agent version
 ```
 
 `run` exits with status 78 when the host was deleted in Spectate (see above).
+`doctor` exits non-zero when a check fails; run it with `sudo` so it can read
+the state. It checks the token with `GET /agent-api/v2/check`, which sends no
+samples and does not mark the host as reporting.
 
 Local settings come from the environment (`/etc/spectate-agent/agent.env` under systemd):
 
@@ -167,13 +218,14 @@ output when the agent is current, and does not start an agent that is stopped.
 cmd/spectate-agent     CLI
 cmd/release-sign       release signing keys and checksums.txt.sig (CI, owner)
 internal/agent         runner: collect loop, ship loop, spool replay, backoff, shutdown flush
-internal/collector     gopsutil collectors (v1-compatible keys/units) + host info
+internal/collector     collectors (gopsutil, /proc, systemctl, timedatectl) + host info + probe (collect, doctor)
+internal/pkgupdates    pending package updates (apt, dnf, yum) for the hourly package check
 internal/metrics       per-window series accumulator (bounded)
 internal/encode        v2 encoder (string table, delta timestamps, decimal/double values, gzip) + reference decoder
 internal/spool         bounded on-disk FIFO
 internal/transport     HTTP client (register/ingest, error classification)
 internal/backoff       capped exponential backoff with equal jitter
-internal/service       systemd units (agent, update timer) / launchd plist
+internal/service       systemd units (agent, update timer, package check timer) / launchd plist
 internal/update        self-update: GitHub releases, signature + checksum verification, atomic replace
 internal/proto/agentv2 generated from proto/spectate/agent/v2/ingest.proto
 proto/                 copy of the schema; the canonical one lives with the API

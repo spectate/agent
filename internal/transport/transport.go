@@ -20,6 +20,7 @@ import (
 const (
 	registerPath = "/agent-api/v2/register"
 	ingestPath   = "/agent-api/v2/ingest"
+	checkPath    = "/agent-api/v2/check"
 	maxResponse  = 1 << 20
 
 	// AgentTimeHeader carries the agent's clock (unix ms) at send time.
@@ -150,6 +151,31 @@ type IngestResponse struct {
 type AgentUpdate struct {
 	LatestVersion string `json:"latest_version"`
 	ReleaseURL    string `json:"release_url"`
+}
+
+// CheckResponse is returned by check.
+type CheckResponse struct {
+	HostUUID string `json:"host_uuid"`
+	Label    string `json:"label"`
+	// ClockOffsetMs is server time minus the request's X-Agent-Time.
+	ClockOffsetMs int64 `json:"clock_offset_ms"`
+}
+
+// Check verifies the host token without sending anything: no samples, and
+// the host is not marked as reporting (doctor). Servers without the endpoint
+// answer 404.
+func (c *Client) Check(ctx context.Context) (*CheckResponse, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+checkPath, nil)
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+c.Token)
+
+	var out CheckResponse
+	if err := c.do(httpReq, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // Register exchanges an install token for a host token.

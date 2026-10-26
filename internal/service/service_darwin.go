@@ -89,3 +89,9 @@ func RestartHint() string {
 	path, _ := plistPath()
 	return fmt.Sprintf("launchctl unload %s && launchctl load -w %s", path, path)
 }
+
+// HasPackageManager reports whether the package update check can run (Linux only).
+func HasPackageManager() bool { return false }
+
+// RefreshUnits rewrites systemd units; there are none here.
+func RefreshUnits(string) error { return nil }

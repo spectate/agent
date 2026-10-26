@@ -13,6 +13,20 @@
 // Network values are amounts per 60 seconds regardless of the collection
 // interval (v1 collected once a minute), so dashboards and thresholds keep
 // their meaning at 15s resolution.
+//
+// Collectors added in v2 (not part of v1) report rates per second:
+//
+//	system.io.{read_bytes,write_bytes} (B/s), {reads,writes} (ops/s), busy_percent, await_ms  label: device
+//	system.pressure.{cpu,memory,io}.some, {memory,io}.full (% of time stalled)
+//	system.oom.kills (processes killed for lack of memory in the round)
+//	system.services.failed (count), system.service.failed = 1  label: unit
+//	system.updates.{pending,security,checked_age}, system.reboot.required (0/1)  label: packages
+//	system.net.tcp.{established,time_wait,orphaned,inuse}
+//	system.files.{used,max}
+//	system.clock.synced (0/1)
+//
+// A collector that has nothing to report on a host (no PSI before Linux 4.20,
+// no systemd, macOS) emits nothing: absent, not zero.
 package collector
 
 import (
@@ -44,10 +58,19 @@ type Configurable interface {
 	Configure(cfg config.Remote)
 }
 
+// Periodic collectors run less often than every round: at most once per
+// IntervalSeconds (in units of the collection interval's second).
+type Periodic interface {
+	IntervalSeconds() int
+}
+
 // System returns the system collectors (the "agent" health collector is
-// owned by the runner).
-func System() []Collector {
-	return []Collector{&CPU{}, &Memory{}, &Load{}, &Disk{}, &Net{}, &Uptime{}}
+// owned by the runner). stateDir is where the updates helper writes its result.
+func System(stateDir string) []Collector {
+	return []Collector{
+		&CPU{}, &Memory{}, &Load{}, &Disk{}, &Net{}, &Uptime{},
+		&DiskIO{}, &Pressure{}, &Services{}, &Updates{StateDir: stateDir}, &Sockets{}, &Clock{},
+	}
 }
 
 // round rounds to 3 decimals so values fit the compact decimal wire encoding;

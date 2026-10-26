@@ -202,6 +202,9 @@ fi
 if [ "$UPGRADE" -eq 1 ]; then
   if [ "$AUTO_UPDATE" -eq 1 ]; then
     "$BIN" install --user "$USER_NAME" --env-file "$ETC_DIR/agent.env" --auto-update
+  else
+    # New versions may bring new units (e.g. the hourly package check)
+    "$BIN" install --refresh-units || echo "warning: could not refresh the systemd units" >&2
   fi
   systemctl restart spectate-agent
   echo "Upgraded and restarted spectate-agent."
